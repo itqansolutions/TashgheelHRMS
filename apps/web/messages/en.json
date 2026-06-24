@@ -259,6 +259,41 @@
       "ACCEPTED": "Accepted",
       "REJECTED": "Rejected",
       "EXPIRED": "Expired"
+    },
+    "placements": {
+      "title": "Placements",
+      "feeAmount": "Fee Amount",
+      "startDate": "Start Date",
+      "guaranteeDays": "Guarantee Days",
+      "guaranteeEndDate": "Guarantee End Date",
+      "status": "Status",
+      "guaranteeStatus": "Guarantee Status",
+      "requestReplacement": "Request Replacement",
+      "noPlacements": "No placements found",
+      "GUARANTEE_PERIOD": "Guarantee Period",
+      "PROBATION_PERIOD": "Probation Period",
+      "COMPLETED": "Completed",
+      "REPLACED": "Replaced",
+      "ACTIVE": "Active",
+      "EXPIRED": "Expired",
+      "CLAIMED": "Claimed"
+    },
+    "replacements": {
+      "title": "Replacements",
+      "reason": "Reason for Replacement",
+      "detailNotes": "Notes",
+      "status": "Status",
+      "completedAt": "Completed At",
+      "noReplacements": "No replacements found",
+      "PERFORMANCE": "Performance",
+      "CULTURAL_FIT": "Cultural Fit",
+      "RESIGNATION": "Resignation",
+      "TERMINATION": "Termination",
+      "MEDICAL": "Medical",
+      "OTHER": "Other",
+      "REQUESTED": "Requested",
+      "IN_PROGRESS": "In Progress",
+      "COMPLETED": "Completed"
     }
   }
 }

@@ -34,6 +34,8 @@ async function main() {
     { id: 'offers:read', description: 'Read offers' },
     { id: 'offers:write', description: 'Manage offers' },
     { id: 'offers:approve', description: 'Approve job offers' },
+    { id: 'placements:read', description: 'Read placements and replacements' },
+    { id: 'placements:write', description: 'Manage placements and replacements' },
     { id: 'finance:read', description: 'Read invoices, payments, and expenses' },
     { id: 'finance:write', description: 'Manage invoices, payments, and expenses' },
     { id: 'settings:read', description: 'Read system and company settings' },
@@ -96,6 +98,7 @@ async function main() {
     'applications:read', 'applications:write',
     'interviews:read', 'interviews:write',
     'offers:read', 'offers:write', 'offers:approve',
+    'placements:read', 'placements:write',
     'finance:read', 'reports:read', 'settings:read',
   ];
   for (const permId of managerPerms) {

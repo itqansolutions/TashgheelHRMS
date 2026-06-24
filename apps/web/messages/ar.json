@@ -259,6 +259,41 @@
       "ACCEPTED": "مقبول",
       "REJECTED": "مرفوض",
       "EXPIRED": "منتهي الصلاحية"
+    },
+    "placements": {
+      "title": "التعيينات",
+      "feeAmount": "مبلغ الرسوم",
+      "startDate": "تاريخ المباشرة",
+      "guaranteeDays": "أيام الضمان",
+      "guaranteeEndDate": "تاريخ انتهاء الضمان",
+      "status": "الحالة",
+      "guaranteeStatus": "حالة الضمان",
+      "requestReplacement": "طلب استبدال",
+      "noPlacements": "لا توجد تعيينات",
+      "GUARANTEE_PERIOD": "فترة الضمان",
+      "PROBATION_PERIOD": "فترة التجربة",
+      "COMPLETED": "مكتمل",
+      "REPLACED": "تم الاستبدال",
+      "ACTIVE": "نشط",
+      "EXPIRED": "منتهي",
+      "CLAIMED": "مُطالب به"
+    },
+    "replacements": {
+      "title": "طلبات الاستبدال",
+      "reason": "سبب الاستبدال",
+      "detailNotes": "ملاحظات",
+      "status": "الحالة",
+      "completedAt": "تاريخ الاكتمال",
+      "noReplacements": "لا توجد طلبات استبدال",
+      "PERFORMANCE": "الأداء",
+      "CULTURAL_FIT": "عدم التوافق مع بيئة العمل",
+      "RESIGNATION": "استقالة",
+      "TERMINATION": "إنهاء خدمات",
+      "MEDICAL": "أسباب طبية",
+      "OTHER": "أخرى",
+      "REQUESTED": "مطلوب",
+      "IN_PROGRESS": "قيد التنفيذ",
+      "COMPLETED": "مكتمل"
     }
   }
 }
