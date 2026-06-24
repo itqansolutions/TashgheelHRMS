@@ -294,6 +294,55 @@
       "REQUESTED": "مطلوب",
       "IN_PROGRESS": "قيد التنفيذ",
       "COMPLETED": "مكتمل"
+    },
+    "finance": {
+      "invoices": {
+        "title": "الفواتير",
+        "create": "إنشاء فاتورة",
+        "invoiceNumber": "رقم الفاتورة",
+        "company": "الشركة العميل",
+        "issueDate": "تاريخ الإصدار",
+        "dueDate": "تاريخ الاستحقاق",
+        "amount": "المبلغ",
+        "status": "الحالة",
+        "noInvoices": "لا توجد فواتير",
+        "DRAFT": "مسودة",
+        "SENT": "مُرسلة",
+        "PARTIALLY_PAID": "مدفوعة جزئياً",
+        "PAID": "مدفوعة بالكامل",
+        "OVERDUE": "متأخرة",
+        "CANCELLED": "ملغاة"
+      },
+      "payments": {
+        "title": "المدفوعات والمقبوضات",
+        "record": "تسجيل دفعة",
+        "invoice": "الفاتورة",
+        "amount": "المبلغ",
+        "date": "تاريخ الدفع",
+        "method": "طريقة الدفع",
+        "reference": "الرقم المرجعي",
+        "noPayments": "لا توجد مدفوعات مسجلة",
+        "BANK_TRANSFER": "تحويل بنكي",
+        "CHECK": "شيك",
+        "CASH": "نقداً",
+        "CREDIT_CARD": "بطاقة ائتمان"
+      },
+      "expenses": {
+        "title": "المصروفات التشغيلية",
+        "logExpense": "تسجيل مصروف",
+        "category": "التصنيف",
+        "description": "الوصف / البيان",
+        "amount": "المبلغ",
+        "date": "التاريخ",
+        "receipt": "الفاتورة / الإيصال",
+        "noExpenses": "لا توجد مصروفات مسجلة",
+        "OFFICE": "مكتبية",
+        "TRAVEL": "سفر وتنقل",
+        "MARKETING": "تسويق وإعلان",
+        "SOFTWARE": "برامج واشتراكات",
+        "UTILITIES": "فواتير خدمية",
+        "OTHER": "أخرى"
+      }
     }
   }
 }

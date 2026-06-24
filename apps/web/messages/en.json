@@ -294,6 +294,55 @@
       "REQUESTED": "Requested",
       "IN_PROGRESS": "In Progress",
       "COMPLETED": "Completed"
+    },
+    "finance": {
+      "invoices": {
+        "title": "Invoices",
+        "create": "Create Invoice",
+        "invoiceNumber": "Invoice Number",
+        "company": "Company",
+        "issueDate": "Issue Date",
+        "dueDate": "Due Date",
+        "amount": "Amount",
+        "status": "Status",
+        "noInvoices": "No invoices found",
+        "DRAFT": "Draft",
+        "SENT": "Sent",
+        "PARTIALLY_PAID": "Partially Paid",
+        "PAID": "Paid",
+        "OVERDUE": "Overdue",
+        "CANCELLED": "Cancelled"
+      },
+      "payments": {
+        "title": "Payments",
+        "record": "Record Payment",
+        "invoice": "Invoice",
+        "amount": "Amount",
+        "date": "Payment Date",
+        "method": "Payment Method",
+        "reference": "Reference Number",
+        "noPayments": "No payments found",
+        "BANK_TRANSFER": "Bank Transfer",
+        "CHECK": "Check",
+        "CASH": "Cash",
+        "CREDIT_CARD": "Credit Card"
+      },
+      "expenses": {
+        "title": "Expenses",
+        "logExpense": "Log Expense",
+        "category": "Category",
+        "description": "Description",
+        "amount": "Amount",
+        "date": "Date",
+        "receipt": "Receipt",
+        "noExpenses": "No expenses found",
+        "OFFICE": "Office",
+        "TRAVEL": "Travel",
+        "MARKETING": "Marketing",
+        "SOFTWARE": "Software",
+        "UTILITIES": "Utilities",
+        "OTHER": "Other"
+      }
     }
   }
 }
