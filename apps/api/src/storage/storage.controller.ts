@@ -13,38 +13,48 @@ export class StorageController {
     @Res() res: any
   ) {
     const key = `${folder}/${filename}`;
-    const filePath = this.storageService.getLocalFilePath(key);
+    const fileData = await this.storageService.getFileStream(key);
 
-    if (!filePath) {
+    if (!fileData) {
       throw new NotFoundException('File not found');
     }
 
     const ext = path.extname(filename).toLowerCase();
-    let contentType = 'application/octet-stream';
+    let contentType = fileData.contentType || 'application/octet-stream';
 
-    switch (ext) {
-      case '.pdf':
-        contentType = 'application/pdf';
-        break;
-      case '.docx':
-        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-        break;
-      case '.doc':
-        contentType = 'application/msword';
-        break;
-      case '.png':
-        contentType = 'image/png';
-        break;
-      case '.jpg':
-      case '.jpeg':
-        contentType = 'image/jpeg';
-        break;
-      case '.txt':
-        contentType = 'text/plain';
-        break;
+    if (!fileData.contentType) {
+      switch (ext) {
+        case '.pdf':
+          contentType = 'application/pdf';
+          break;
+        case '.docx':
+          contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          break;
+        case '.doc':
+          contentType = 'application/msword';
+          break;
+        case '.png':
+          contentType = 'image/png';
+          break;
+        case '.jpg':
+        case '.jpeg':
+          contentType = 'image/jpeg';
+          break;
+        case '.txt':
+          contentType = 'text/plain';
+          break;
+      }
     }
 
     res.setHeader('Content-Type', contentType);
-    res.sendFile(filePath);
+
+    if (fileData.stream && typeof fileData.stream.pipe === 'function') {
+      fileData.stream.pipe(res);
+    } else if (fileData.stream && typeof fileData.stream.transformToByteArray === 'function') {
+      const bytes = await fileData.stream.transformToByteArray();
+      res.send(Buffer.from(bytes));
+    } else {
+      res.send(fileData.stream);
+    }
   }
 }
