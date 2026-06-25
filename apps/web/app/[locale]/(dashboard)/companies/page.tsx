@@ -105,7 +105,7 @@ export default function CompaniesPage() {
     api.get('/users')
       .then((res) => {
         if (res.data?.success) {
-          setUsers(res.data.users);
+          setUsers(res.data.data.users || []);
         }
       })
       .catch(() => {});
