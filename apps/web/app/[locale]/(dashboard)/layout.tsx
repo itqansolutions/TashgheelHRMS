@@ -28,6 +28,7 @@ import {
 import { api } from '../../../lib/api';
 
 import { useNotificationStore } from '../../../store/notifications';
+import { NotificationDropdown } from '../../../components/NotificationDropdown';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -222,17 +223,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
 
             {/* Notification bell */}
-            <Link
-              href={`/${locale}/notifications`}
-              className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors"
-            >
-              <Bell className="h-5 w-5" />
-              {unreadNotifications > 0 && (
-                <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#E54B4B] text-[9px] font-extrabold text-white">
-                  {unreadNotifications}
-                </span>
-              )}
-            </Link>
+            <NotificationDropdown locale={locale} />
 
             {/* Profile Dropdown */}
             <div className="relative">
