@@ -1,16 +1,20 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { StorageService } from '../storage/storage.service';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
 import { UpdateCandidateDto } from './dto/update-candidate.dto';
 import { CreatePoolDto } from './dto/create-pool.dto';
 import { CandidateDocumentType } from '@repo/database';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class CandidatesService {
+  private readonly logger = new Logger(CandidatesService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly storageService: StorageService,
+    private readonly aiService: AiService,
   ) {}
 
   async create(dto: CreateCandidateDto, actorId: string) {
@@ -507,5 +511,125 @@ export class CandidatesService {
 
       return { success: true };
     });
+  }
+
+  async parseAndCreateFromCv(file: Express.Multer.File, actorId: string) {
+    const pdfParse = require('pdf-parse');
+    let text = '';
+    try {
+      const pdfData = await pdfParse(file.buffer);
+      text = pdfData.text.substring(0, 10000); // Take up to 10k chars
+    } catch (err) {
+      // Fallback if not a PDF (e.g. text/docx)
+      text = file.buffer.toString('utf-8').substring(0, 5000);
+    }
+
+    const parsedData = await this.aiService.parseResumeText(text);
+
+    const email = parsedData.email ? parsedData.email.trim() : undefined;
+    const phone = parsedData.phone ? parsedData.phone.trim() : undefined;
+
+    // Check for duplicates in the DB (only active candidates, where deletedAt is null)
+    let existingCandidate = null;
+    if (email) {
+      existingCandidate = await this.db.candidate.findFirst({
+        where: { email, deletedAt: null },
+      });
+    }
+
+    if (!existingCandidate && phone) {
+      existingCandidate = await this.db.candidate.findFirst({
+        where: { phone, deletedAt: null },
+      });
+    }
+
+    if (existingCandidate) {
+      return {
+        created: false,
+        duplicated: true,
+        candidate: existingCandidate,
+      };
+    }
+
+    // Create a new candidate profile
+    const candidate = await this.db.$transaction(async (tx) => {
+      const createdCandidate = await tx.candidate.create({
+        data: {
+          firstName: parsedData.firstName || 'Candidate',
+          lastName: parsedData.lastName || 'Profile',
+          email: email,
+          phone: phone,
+          aiSummary: parsedData.aiSummary || '',
+          availability: 'AVAILABLE',
+          skills: parsedData.skills && parsedData.skills.length > 0
+            ? {
+                createMany: {
+                  data: parsedData.skills.map((skillName: string) => ({
+                    skillName,
+                    proficiency: 'INTERMEDIATE',
+                  })),
+                },
+              }
+            : undefined,
+        },
+        include: {
+          skills: true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: actorId,
+          action: 'CREATE',
+          resource: 'Candidate',
+          resourceId: createdCandidate.id,
+          afterValue: createdCandidate as any,
+        },
+      });
+
+      return createdCandidate;
+    });
+
+    // Upload the CV file and link it to the newly created candidate as a CV Document
+    try {
+      const uploadResult = await this.storageService.uploadFile(file, 'candidates');
+
+      await this.db.$transaction(async (tx) => {
+        const doc = await tx.candidateDocument.create({
+          data: {
+            candidateId: candidate.id,
+            type: 'CV',
+            fileName: file.originalname,
+            fileUrl: uploadResult.url,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: actorId,
+            action: 'UPLOAD_DOCUMENT',
+            resource: 'CandidateDocument',
+            resourceId: doc.id,
+            afterValue: doc as any,
+          },
+        });
+      });
+    } catch (uploadError) {
+      this.logger.error(`Failed to upload CV document for candidate ${candidate.id}`, uploadError);
+    }
+
+    // Sync candidate embedding based on AI summary and skills to support vector matching
+    try {
+      const textToEmbed = `${candidate.firstName} ${candidate.lastName}. ${candidate.aiSummary || ''}. Skills: ${(parsedData.skills || []).join(', ')}`;
+      await this.aiService.syncCandidateEmbedding(candidate.id, textToEmbed);
+    } catch (embedError) {
+      this.logger.error(`Failed to sync candidate embedding for candidate ${candidate.id}`, embedError);
+    }
+
+    return {
+      created: true,
+      duplicated: false,
+      candidate,
+    };
   }
 }

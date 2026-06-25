@@ -91,6 +91,116 @@ export default function CandidatesPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Bulk Upload CVs State
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<Array<{
+    fileName: string;
+    status: 'pending' | 'uploading' | 'parsing' | 'success' | 'duplicate' | 'failed';
+    error?: string;
+    candidateName?: string;
+  }>>([]);
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files);
+      setSelectedFiles(filesArray);
+      setUploadProgress(
+        filesArray.map((f) => ({
+          fileName: f.name,
+          status: 'pending',
+        }))
+      );
+    }
+  };
+
+  const handleBulkUploadSubmit = async () => {
+    if (selectedFiles.length === 0) return;
+    setIsProcessingBulk(true);
+
+    let successCount = 0;
+    let duplicateCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      if (!file) continue;
+      
+      setUploadProgress((prev) =>
+        prev.map((item, idx) =>
+          idx === i ? { ...item, status: 'uploading' } : item
+        )
+      );
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        setUploadProgress((prev) =>
+          prev.map((item, idx) =>
+            idx === i ? { ...item, status: 'parsing' } : item
+          )
+        );
+
+        const response = await api.post('/candidates/parse-cv', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+
+        if (response.data?.success) {
+          const { created, duplicated, candidate } = response.data;
+          const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}` : '';
+          
+          if (created) {
+            successCount++;
+            setUploadProgress((prev) =>
+              prev.map((item, idx) =>
+                idx === i
+                  ? { ...item, status: 'success', candidateName }
+                  : item
+              )
+            );
+          } else if (duplicated) {
+            duplicateCount++;
+            setUploadProgress((prev) =>
+              prev.map((item, idx) =>
+                idx === i
+                  ? { ...item, status: 'duplicate', candidateName }
+                  : item
+              )
+            );
+          }
+        } else {
+          failCount++;
+          setUploadProgress((prev) =>
+            prev.map((item, idx) =>
+              idx === i ? { ...item, status: 'failed', error: 'Unknown response' } : item
+            )
+          );
+        }
+      } catch (err: any) {
+        failCount++;
+        const errMsg = err.response?.data?.message || err.message || 'Parsing failed';
+        setUploadProgress((prev) =>
+          prev.map((item, idx) =>
+            idx === i ? { ...item, status: 'failed', error: errMsg } : item
+          )
+        );
+      }
+    }
+
+    setIsProcessingBulk(false);
+    fetchCandidates();
+
+    const summaryMsg = locale === 'ar'
+      ? `اكتمل الرفع: تم استيراد ${successCount}، وتخطي ${duplicateCount} مكرر، وفشل ${failCount}.`
+      : `Upload completed: ${successCount} imported, ${duplicateCount} duplicates skipped, ${failCount} failed.`;
+    setSuccessMsg(summaryMsg);
+    setTimeout(() => setSuccessMsg(null), 5000);
+  };
+
   const fetchCandidates = () => {
     setIsLoading(true);
     const paramsObj: any = { page, limit };
@@ -244,6 +354,15 @@ export default function CandidatesPage() {
           >
             <FolderOpen className="h-5 w-5" />
             <span>{t('pools.title')}</span>
+          </button>
+
+          {/* Bulk Upload Button */}
+          <button
+            onClick={() => setIsBulkUploadOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-[#2A2C4E] hover:bg-slate-50 transition-all active:scale-[0.98]"
+          >
+            <Users className="h-5 w-5 text-slate-500" />
+            <span>{locale === 'ar' ? 'رفع جماعي' : 'Bulk Upload CVs'}</span>
           </button>
           
           <button
@@ -570,6 +689,142 @@ export default function CandidatesPage() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Upload CVs Modal */}
+      {isBulkUploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1C29]/40 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <h3 className="text-lg font-bold text-[#1A1C29]">
+                {locale === 'ar' ? 'رفع جماعي للسير الذاتية بالذكاء الاصطناعي' : 'AI Bulk Upload CVs'}
+              </h3>
+              <button
+                disabled={isProcessingBulk}
+                onClick={() => {
+                  setIsBulkUploadOpen(false);
+                  setSelectedFiles([]);
+                  setUploadProgress([]);
+                }}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Drag & Drop Area */}
+            <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+              <div className="relative border-2 border-dashed border-slate-200 hover:border-[#00B67A] rounded-2xl p-6 bg-slate-50/50 hover:bg-slate-50/20 text-center transition-all">
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.doc,.txt"
+                  onChange={handleFileChange}
+                  disabled={isProcessingBulk}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <Users className="mx-auto h-10 w-10 text-slate-300 mb-2" />
+                <p className="text-sm font-semibold text-slate-700">
+                  {locale === 'ar' ? 'اسحب وأفلت السير الذاتية هنا' : 'Drag & drop CVs here'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {locale === 'ar' ? 'يدعم PDF, DOCX, TXT حتى 5 ميجابايت للملف' : 'Supports PDF, DOCX, TXT up to 5MB per file'}
+                </p>
+              </div>
+
+              {/* Uploading progress list */}
+              {uploadProgress.length > 0 && (
+                <div className="space-y-2 border border-slate-100 rounded-2xl p-4 bg-slate-50/30 max-h-60 overflow-y-auto">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    {locale === 'ar' ? 'قائمة الملفات والتقدم' : 'Files list & Progress'}
+                  </h4>
+                  {uploadProgress.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100/50 last:border-0">
+                      <div className="flex flex-col min-w-0 pr-2">
+                        <span className="font-semibold text-slate-700 truncate" title={item.fileName}>
+                          {item.fileName}
+                        </span>
+                        {item.candidateName && (
+                          <span className="text-[10px] text-[#00B67A] font-semibold mt-0.5">
+                            {locale === 'ar' ? `المترشح: ${item.candidateName}` : `Candidate: ${item.candidateName}`}
+                          </span>
+                        )}
+                        {item.error && (
+                          <span className="text-[10px] text-rose-500 font-medium mt-0.5">
+                            {item.error}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="shrink-0 pl-2">
+                        {item.status === 'pending' && (
+                          <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                            {locale === 'ar' ? 'قيد الانتظار' : 'Pending'}
+                          </span>
+                        )}
+                        {item.status === 'uploading' && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            <span>{locale === 'ar' ? 'جاري الرفع...' : 'Uploading...'}</span>
+                          </span>
+                        )}
+                        {item.status === 'parsing' && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            <span>{locale === 'ar' ? 'تحليل الذكاء الاصطناعي...' : 'AI Parsing...'}</span>
+                          </span>
+                        )}
+                        {item.status === 'success' && (
+                          <span className="inline-flex rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+                            {locale === 'ar' ? 'مكتمل' : 'Imported'}
+                          </span>
+                        )}
+                        {item.status === 'duplicate' && (
+                          <span className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-600" title={locale === 'ar' ? 'تم تخطيه لأنه مكرر' : 'Skipped duplicate profile'}>
+                            {locale === 'ar' ? 'مكرر (تخطي)' : 'Duplicate'}
+                          </span>
+                        )}
+                        {item.status === 'failed' && (
+                          <span className="inline-flex rounded-md bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">
+                            {locale === 'ar' ? 'فشل' : 'Failed'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 border-t border-slate-100 pt-4 mt-4">
+              <button
+                type="button"
+                onClick={handleBulkUploadSubmit}
+                disabled={isProcessingBulk || selectedFiles.length === 0}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#00B67A] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#009b67] active:scale-[0.98] disabled:opacity-50 transition-all"
+              >
+                {isProcessingBulk ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <span>{locale === 'ar' ? 'بدأ استيراد السير الذاتية' : 'Start CV Import'}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingBulk}
+                onClick={() => {
+                  setIsBulkUploadOpen(false);
+                  setSelectedFiles([]);
+                  setUploadProgress([]);
+                }}
+                className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-50 active:scale-[0.98] transition-all"
+              >
+                {locale === 'ar' ? 'إغلاق' : 'Close'}
+              </button>
+            </div>
           </div>
         </div>
       )}

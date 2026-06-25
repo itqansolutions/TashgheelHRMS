@@ -191,4 +191,20 @@ export class CandidatesController {
     const result = await this.candidatesService.removeDocument(id, actor.id);
     return result;
   }
+
+  @Post('parse-cv')
+  @Permissions('candidates:write')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Parse a CV file, create candidate profile, upload CV document, preventing duplication' })
+  async parseAndCreate(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    if (!file) {
+      throw new BadRequestException('A CV file must be provided');
+    }
+    const result = await this.candidatesService.parseAndCreateFromCv(file, actor.id);
+    return { success: true, ...result };
+  }
 }
