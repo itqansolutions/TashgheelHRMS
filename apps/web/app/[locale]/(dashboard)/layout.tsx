@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { api } from '../../../lib/api';
 
+import { useNotificationStore } from '../../../store/notifications';
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const params = useParams();
@@ -37,24 +39,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, isLoading, isAuthenticated, fetchProfile, logout } = useAuthStore();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  
+  const { unreadNotifications, fetchNotifications, initSocket, disconnectSocket } = useNotificationStore((state) => ({
+    unreadNotifications: state.unreadCount,
+    fetchNotifications: state.fetchNotifications,
+    initSocket: state.initSocket,
+    disconnectSocket: state.disconnectSocket,
+  }));
 
   useEffect(() => {
     fetchProfile().then((profile) => {
       if (!profile) {
         router.replace(`/${locale}/login`);
+      } else {
+        fetchNotifications();
+        const token = localStorage.getItem('token');
+        if (token) initSocket(token);
       }
     });
 
-    // Fetch unread notification count
-    api.get('/notifications/unread-count')
-      .then((res) => {
-        if (res.data?.success) {
-          setUnreadNotifications(res.data.data.count);
-        }
-      })
-      .catch(() => {});
-  }, [fetchProfile, router, locale]);
+    return () => {
+      disconnectSocket();
+    };
+  }, [fetchProfile, router, locale, fetchNotifications, initSocket, disconnectSocket]);
 
   if (isLoading) {
     return (
@@ -93,6 +100,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: t('offers'), href: `/${locale}/offers`, icon: FileSpreadsheet },
     { name: t('placements'), href: `/${locale}/placements`, icon: ShieldCheck },
     { name: t('finance'), href: `/${locale}/finance`, icon: Coins },
+    { name: 'Analytics & Reports', href: `/${locale}/analytics`, icon: FileSpreadsheet },
     { name: t('users'), href: `/${locale}/users`, icon: Users, permission: 'users:read' },
     { name: t('roles'), href: `/${locale}/roles`, icon: ShieldCheck, permission: 'users:read' },
     { name: t('settings'), href: `/${locale}/settings`, icon: Settings, permission: 'settings:read' },

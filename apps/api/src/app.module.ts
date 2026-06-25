@@ -22,17 +22,43 @@ import { PlacementsModule } from './placements/placements.module';
 import { ReplacementsModule } from './replacements/replacements.module';
 import { FinanceModule } from './finance/finance.module';
 import { AiModule } from './ai/ai.module';
+import { ReportsModule } from './reports/reports.module';
+
+import { BullModule } from '@nestjs/bullmq';
+import { BullBoardModule } from '@bull-board/nestjs';
+import { ExpressAdapter } from '@bull-board/express';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { AutomationsModule } from './automations/automations.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DatabaseModule,
+    BullModule.forRoot({
+      connection: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379', 10),
+      },
+    }),
+    BullBoardModule.forRoot({
+      route: '/queues',
+      adapter: ExpressAdapter,
+    }),
+    BullBoardModule.forFeature({
+      name: 'email',
+      adapter: BullMQAdapter,
+    }),
+    BullBoardModule.forFeature({
+      name: 'system',
+      adapter: BullMQAdapter,
+    }),
     AuthModule,
     UsersModule,
     AuditModule,
     RolesModule,
     SettingsModule,
     NotificationsModule,
+    AutomationsModule,
     StorageModule,
     CompaniesModule,
     ContactsModule,
@@ -48,6 +74,7 @@ import { AiModule } from './ai/ai.module';
     ReplacementsModule,
     FinanceModule,
     AiModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}

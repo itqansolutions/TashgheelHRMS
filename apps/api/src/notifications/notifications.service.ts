@@ -1,6 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { NotificationsGateway } from './notifications.gateway';
+
+export interface CreateNotificationDto {
+  userId: string;
+  type: string;
+  title: string;
+  message: string;
+  metadata?: any;
+}
 
 @Injectable()
 export class NotificationsService {
@@ -9,88 +17,77 @@ export class NotificationsService {
     private readonly gateway: NotificationsGateway,
   ) {}
 
-  async findAllForUser(userId: string, query: { page?: number; limit?: number; unreadOnly?: boolean }) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const skip = (page - 1) * limit;
+  async createNotification(dto: CreateNotificationDto) {
+    // Check preferences
+    const prefs = await this.db.notificationPreference.findUnique({
+      where: { userId: dto.userId },
+    });
 
-    const where: any = { userId };
-    if (query.unreadOnly) {
-      where.isRead = false;
+    if (prefs && !prefs.inAppEnabled) {
+      return null;
     }
 
-    const [notifications, total] = await Promise.all([
-      this.db.systemNotification.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.db.systemNotification.count({ where }),
-    ]);
-
-    return {
-      notifications,
-      meta: {
-        total,
-        page,
-        pages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  async create(data: {
-    userId: string;
-    type: string;
-    title: string;
-    message: string;
-    metadata?: any;
-  }) {
     const notification = await this.db.systemNotification.create({
       data: {
-        userId: data.userId,
-        type: data.type,
-        title: data.title,
-        message: data.message,
-        metadata: data.metadata ?? {},
+        userId: dto.userId,
+        type: dto.type,
+        title: dto.title,
+        message: dto.message,
+        metadata: dto.metadata || {},
       },
     });
 
-    // Real-time push via Socket.IO
-    this.gateway.sendToUser(data.userId, 'notification', notification);
+    // Push via websocket
+    this.gateway.sendNotificationToUser(dto.userId, notification);
 
     return notification;
   }
 
-  async markAsRead(id: string, userId: string) {
-    const notification = await this.db.systemNotification.findFirst({
-      where: { id, userId },
+  async getNotifications(userId: string) {
+    return this.db.systemNotification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
     });
+  }
 
-    if (!notification) {
-      throw new NotFoundException('Notification not found');
-    }
+  async getUnreadCount(userId: string) {
+    return this.db.systemNotification.count({
+      where: { userId, isRead: false },
+    });
+  }
 
+  async markAsRead(id: string, userId: string) {
     return this.db.systemNotification.update({
-      where: { id },
+      where: { id, userId },
       data: { isRead: true },
     });
   }
 
   async markAllAsRead(userId: string) {
-    await this.db.systemNotification.updateMany({
+    return this.db.systemNotification.updateMany({
       where: { userId, isRead: false },
       data: { isRead: true },
     });
-
-    return { success: true, message: 'All notifications marked as read' };
   }
 
-  async getUnreadCount(userId: string) {
-    const count = await this.db.systemNotification.count({
-      where: { userId, isRead: false },
+  async getPreferences(userId: string) {
+    let prefs = await this.db.notificationPreference.findUnique({
+      where: { userId },
     });
+    if (!prefs) {
+      prefs = await this.db.notificationPreference.create({
+        data: { userId },
+      });
+    }
+    return prefs;
+  }
 
-    return { count };
+  async updatePreferences(userId: string, data: { inAppEnabled?: boolean; emailEnabled?: boolean }) {
+    return this.db.notificationPreference.upsert({
+      where: { userId },
+      update: data,
+      create: { userId, ...data },
+    });
   }
 }

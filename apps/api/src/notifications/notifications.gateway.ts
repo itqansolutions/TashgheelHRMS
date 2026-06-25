@@ -3,63 +3,71 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { Injectable, Logger } from '@nestjs/common';
 
+@Injectable()
 @WebSocketGateway({
-  namespace: 'notifications',
   cors: {
-    origin: '*',
+    origin: '*', // Should be restricted in production
   },
 })
-@Injectable()
 export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(NotificationsGateway.name);
-  private userSockets = new Map<string, Socket>();
+  
+  // Map of userId -> Set of socket IDs
+  private userSockets = new Map<string, Set<string>>();
 
   constructor(private readonly jwtService: JwtService) {}
 
   async handleConnection(client: Socket) {
     try {
-      const token = client.handshake.auth?.token || client.handshake.query?.token;
+      const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.split(' ')[1];
       if (!token) {
-        this.logger.warn(`Connection rejected: no token provided. Socket ID: ${client.id}`);
         client.disconnect();
         return;
       }
 
-      const payload = this.jwtService.verify(token);
-      const userId = payload.sub;
+      const decoded = this.jwtService.verify(token);
+      const userId = decoded.sub;
 
-      this.userSockets.set(userId, client);
-      this.logger.log(`User ${userId} connected. Socket ID: ${client.id}`);
+      client.data.userId = userId;
+
+      if (!this.userSockets.has(userId)) {
+        this.userSockets.set(userId, new Set());
+      }
+      this.userSockets.get(userId)!.add(client.id);
+
+      this.logger.log(`Client connected: ${client.id} for user ${userId}`);
     } catch (err) {
-      this.logger.error(`Connection authentication failed: ${err.message}. Socket ID: ${client.id}`);
+      this.logger.warn(`Invalid socket connection attempt: ${err.message}`);
       client.disconnect();
     }
   }
 
   handleDisconnect(client: Socket) {
-    for (const [userId, socket] of this.userSockets.entries()) {
-      if (socket.id === client.id) {
+    const userId = client.data.userId;
+    if (userId && this.userSockets.has(userId)) {
+      this.userSockets.get(userId)!.delete(client.id);
+      if (this.userSockets.get(userId)!.size === 0) {
         this.userSockets.delete(userId);
-        this.logger.log(`User ${userId} disconnected.`);
-        break;
       }
     }
+    this.logger.log(`Client disconnected: ${client.id}`);
   }
 
-  sendToUser(userId: string, event: string, data: any) {
-    const socket = this.userSockets.get(userId);
-    if (socket) {
-      socket.emit(event, data);
-      return true;
+  sendNotificationToUser(userId: string, notification: any) {
+    const sockets = this.userSockets.get(userId);
+    if (sockets && sockets.size > 0) {
+      sockets.forEach((socketId) => {
+        this.server.to(socketId).emit('notification', notification);
+      });
     }
-    return false;
   }
 }
