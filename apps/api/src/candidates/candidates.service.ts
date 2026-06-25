@@ -553,8 +553,20 @@ export class CandidatesService {
 
     const parsedData = await this.aiService.parseResumeText(text);
 
-    const email = parsedData.email ? parsedData.email.trim() : undefined;
-    const phone = parsedData.phone ? parsedData.phone.trim() : undefined;
+    // Ensure text types for extracted values and trim them safely
+    const cleanString = (val: any): string | undefined => {
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      }
+      return undefined;
+    };
+
+    const email = cleanString(parsedData?.email);
+    const phone = cleanString(parsedData?.phone);
+    const firstName = cleanString(parsedData?.firstName) || 'Candidate';
+    const lastName = cleanString(parsedData?.lastName) || 'Profile';
+    const aiSummary = cleanString(parsedData?.aiSummary) || '';
 
     // Check for duplicates in the DB (only active candidates, where deletedAt is null)
     let existingCandidate = null;
@@ -579,43 +591,71 @@ export class CandidatesService {
     }
 
     // Create a new candidate profile
-    const candidate = await this.db.$transaction(async (tx) => {
-      const createdCandidate = await tx.candidate.create({
-        data: {
-          firstName: parsedData.firstName || 'Candidate',
-          lastName: parsedData.lastName || 'Profile',
-          email: email,
-          phone: phone,
-          aiSummary: parsedData.aiSummary || '',
-          availability: 'AVAILABLE',
-          skills: Array.isArray(parsedData.skills) && parsedData.skills.length > 0
-            ? {
-                createMany: {
-                  data: parsedData.skills.map((skillName: string) => ({
-                    skillName,
-                    proficiency: 'INTERMEDIATE',
-                  })),
-                },
-              }
-            : undefined,
-        },
-        include: {
-          skills: true,
-        },
-      });
+    let candidate;
+    try {
+      candidate = await this.db.$transaction(async (tx) => {
+        const createdCandidate = await tx.candidate.create({
+          data: {
+            firstName: firstName,
+            lastName: lastName,
+            email: email,
+            phone: phone,
+            aiSummary: aiSummary,
+            availability: 'AVAILABLE',
+            skills: Array.isArray(parsedData?.skills) && parsedData.skills.length > 0
+              ? {
+                  createMany: {
+                    data: parsedData.skills
+                      .filter((s: any) => typeof s === 'string' && s.trim().length > 0)
+                      .map((skillName: string) => ({
+                        skillName: skillName.trim(),
+                        proficiency: 'INTERMEDIATE',
+                      })),
+                  },
+                }
+              : undefined,
+          },
+          include: {
+            skills: true,
+          },
+        });
 
-      await tx.auditLog.create({
-        data: {
-          userId: actorId,
-          action: 'CREATE',
-          resource: 'Candidate',
-          resourceId: createdCandidate.id,
-          afterValue: createdCandidate as any,
-        },
-      });
+        await tx.auditLog.create({
+          data: {
+            userId: actorId,
+            action: 'CREATE',
+            resource: 'Candidate',
+            resourceId: createdCandidate.id,
+            afterValue: createdCandidate as any,
+          },
+        });
 
-      return createdCandidate;
-    });
+        return createdCandidate;
+      });
+    } catch (err: any) {
+      // Catch duplicate constraint errors (P2002) in case database has a soft-deleted or concurrent candidate
+      if (err.code === 'P2002') {
+        const orConditions = [];
+        if (email) orConditions.push({ email });
+        if (phone) orConditions.push({ phone });
+        
+        if (orConditions.length > 0) {
+          const existing = await this.db.candidate.findFirst({
+            where: {
+              OR: orConditions,
+            },
+          });
+          if (existing) {
+            return {
+              created: false,
+              duplicated: true,
+              candidate: existing,
+            };
+          }
+        }
+      }
+      throw err; // rethrow if it is some other error
+    }
 
     // Upload the CV file and link it to the newly created candidate as a CV Document
     try {
