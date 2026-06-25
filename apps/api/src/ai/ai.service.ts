@@ -167,8 +167,8 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
 
       return response.text || '';
     } catch (error) {
-      this.logger.error('Failed to generate JD via Gemini, returning fallback JD', error);
-      return this.getMockJobDescription(dto);
+      this.logger.error('Failed to generate JD via Gemini', error);
+      throw error;
     }
   }
 
@@ -208,8 +208,8 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
       return JSON.parse(jsonStr);
     } catch (error) {
-      this.logger.error('Failed to parse resume via Gemini, returning fallback parsed resume', error);
-      return this.getMockParsedResume(text);
+      this.logger.error('Failed to parse resume via Gemini', error);
+      throw error;
     }
   }
 
@@ -328,8 +328,8 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
 
       return response.text || '';
     } catch (error) {
-      this.logger.error('Failed to generate interview questions via Gemini, returning mock questions', error);
-      return this.getMockInterviewQuestions(candidate, jobOpening);
+      this.logger.error('Failed to generate interview questions via Gemini', error);
+      throw error;
     }
   }
 

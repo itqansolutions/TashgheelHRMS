@@ -126,9 +126,9 @@ export default function CandidateDetailPage() {
       try {
         const urlObj = new URL(resolvedUrl);
         const parts = urlObj.pathname.split('/').filter(Boolean);
-        if (parts.length >= 3) {
-          const folder = parts[1];
-          const filename = parts.slice(2).join('/');
+        if (parts.length >= 2) {
+          const folder = parts[parts.length - 2];
+          const filename = parts[parts.length - 1];
           const relativePath = `/api/storage/file/${folder}/${filename}`;
           
           let cleanApi = apiUrl || 'http://localhost:4000';
@@ -143,25 +143,20 @@ export default function CandidateDetailPage() {
     }
 
     // Handle localhost URL replacements
-    if (apiUrl && (resolvedUrl.startsWith('http://localhost') || resolvedUrl.startsWith('http://127.0.0.1'))) {
+    if (resolvedUrl.startsWith('http://localhost') || resolvedUrl.startsWith('http://127.0.0.1')) {
       try {
         const urlObj = new URL(resolvedUrl);
-        let apiCleanUrl = apiUrl;
-        if (!apiCleanUrl.startsWith('http://') && !apiCleanUrl.startsWith('https://')) {
-          apiCleanUrl = `https://${apiCleanUrl}`;
-        }
-        const apiDomain = new URL(apiCleanUrl);
-        urlObj.protocol = apiDomain.protocol;
-        urlObj.host = apiDomain.host;
-        return urlObj.toString();
-      } catch (e) {
-        let cleanApi = apiUrl;
+        const pathAndQuery = urlObj.pathname + urlObj.search;
+        let cleanApi = apiUrl || 'http://localhost:4000';
         if (!cleanApi.startsWith('http://') && !cleanApi.startsWith('https://')) {
           cleanApi = `https://${cleanApi}`;
         }
-        return resolvedUrl.replace(/^http:\/\/(localhost|127\.0\.0\.1):\d*/, cleanApi.replace(/\/$/, ''));
+        return `${cleanApi.replace(/\/$/, '')}${pathAndQuery}`;
+      } catch (e) {
+        // Ignore and fallback
       }
     }
+
     return resolvedUrl;
   };
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Res, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, Res, NotFoundException, StreamableFile } from '@nestjs/common';
 import { StorageService } from './storage.service';
 import * as path from 'path';
 
@@ -10,7 +10,7 @@ export class StorageController {
   async getFile(
     @Param('folder') folder: string,
     @Param('filename') filename: string,
-    @Res() res: any
+    @Res({ passthrough: true }) res: any
   ) {
     const key = `${folder}/${filename}`;
     const fileData = await this.storageService.getFileStream(key);
@@ -48,13 +48,11 @@ export class StorageController {
 
     res.setHeader('Content-Type', contentType);
 
-    if (fileData.stream && typeof fileData.stream.pipe === 'function') {
-      fileData.stream.pipe(res);
-    } else if (fileData.stream && typeof fileData.stream.transformToByteArray === 'function') {
-      const bytes = await fileData.stream.transformToByteArray();
-      res.send(Buffer.from(bytes));
-    } else {
-      res.send(fileData.stream);
+    if (!fileData.stream) {
+      throw new NotFoundException('File stream is unavailable');
     }
+
+    return new StreamableFile(fileData.stream);
   }
 }
+

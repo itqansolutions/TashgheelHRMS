@@ -551,6 +551,12 @@ export class CandidatesService {
       text = file.buffer.toString('utf-8').substring(0, 5000);
     }
 
+    if (!text || text.trim().length < 50) {
+      throw new BadRequestException(
+        'The uploaded CV does not contain enough readable text. If this is a scanned PDF (an image), please convert it to a searchable PDF with OCR or upload a text-based document.'
+      );
+    }
+
     const parsedData = await this.aiService.parseResumeText(text);
 
     // Ensure text types for extracted values and trim them safely
