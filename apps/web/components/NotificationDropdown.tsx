@@ -10,12 +10,10 @@ export function NotificationDropdown({ locale }: { locale: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationStore((state) => ({
-    notifications: state.notifications,
-    unreadCount: state.unreadCount,
-    markAsRead: state.markAsRead,
-    markAllAsRead: state.markAllAsRead,
-  }));
+  const notifications = useNotificationStore((state) => state.notifications);
+  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  const markAsRead = useNotificationStore((state) => state.markAsRead);
+  const markAllAsRead = useNotificationStore((state) => state.markAllAsRead);
 
   // Close dropdown when clicking outside
   useEffect(() => {

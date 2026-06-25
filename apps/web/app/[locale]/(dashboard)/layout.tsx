@@ -40,13 +40,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, isLoading, isAuthenticated, fetchProfile, logout } = useAuthStore();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  
-  const { unreadNotifications, fetchNotifications, initSocket, disconnectSocket } = useNotificationStore((state) => ({
-    unreadNotifications: state.unreadCount,
-    fetchNotifications: state.fetchNotifications,
-    initSocket: state.initSocket,
-    disconnectSocket: state.disconnectSocket,
-  }));
+
+  const unreadNotifications = useNotificationStore((state) => state.unreadCount);
+  const fetchNotifications = useNotificationStore((state) => state.fetchNotifications);
+  const initSocket = useNotificationStore((state) => state.initSocket);
+  const disconnectSocket = useNotificationStore((state) => state.disconnectSocket);
 
   useEffect(() => {
     fetchProfile().then((profile) => {
