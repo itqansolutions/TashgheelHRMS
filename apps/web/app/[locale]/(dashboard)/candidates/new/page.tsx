@@ -109,6 +109,7 @@ export default function NewCandidatePage() {
   const handleParseResume = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
+    if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
     
