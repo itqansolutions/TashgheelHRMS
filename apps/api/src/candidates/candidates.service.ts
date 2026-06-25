@@ -557,7 +557,12 @@ export class CandidatesService {
       );
     }
 
-    const parsedData = await this.aiService.parseResumeText(text);
+    let parsedData;
+    try {
+      parsedData = await this.aiService.parseResumeText(text);
+    } catch (error: any) {
+      throw new BadRequestException(`AI Resume Parser failed: ${error.message || error}`);
+    }
 
     // Ensure text types for extracted values and trim them safely
     const cleanString = (val: any): string | undefined => {

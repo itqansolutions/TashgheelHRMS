@@ -161,14 +161,14 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       `;
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
 
       return response.text || '';
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Failed to generate JD via Gemini', error);
-      throw error;
+      throw new Error(`AI Provider Error: ${error?.message || error}`);
     }
   }
 
@@ -200,7 +200,7 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       `;
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
 
@@ -322,7 +322,7 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       `;
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
 

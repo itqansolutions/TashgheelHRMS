@@ -30,8 +30,12 @@ export class AiController {
   @Post('generate-jd')
   @ApiOperation({ summary: 'Generate a Job Description using Gemini AI' })
   async generateJd(@Body() dto: GenerateJdDto) {
-    const jdText = await this.aiService.generateJobDescription(dto);
-    return { success: true, data: jdText };
+    try {
+      const jdText = await this.aiService.generateJobDescription(dto);
+      return { success: true, data: jdText };
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to generate Job Description');
+    }
   }
 
   @Post('parse-resume')
@@ -75,7 +79,12 @@ export class AiController {
       text = file.buffer.toString('utf-8').substring(0, 5000);
     }
     
-    const parsedData = await this.aiService.parseResumeText(text);
+    let parsedData;
+    try {
+      parsedData = await this.aiService.parseResumeText(text);
+    } catch (error: any) {
+      throw new BadRequestException(`AI Resume Parser failed: ${error.message || error}`);
+    }
     return { success: true, data: parsedData };
   }
 

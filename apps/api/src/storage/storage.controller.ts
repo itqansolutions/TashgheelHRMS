@@ -52,6 +52,15 @@ export class StorageController {
       throw new NotFoundException('File stream is unavailable');
     }
 
+    if (typeof fileData.stream.transformToByteArray === 'function') {
+      try {
+        const bytes = await fileData.stream.transformToByteArray();
+        return new StreamableFile(Buffer.from(bytes));
+      } catch (error) {
+        throw new NotFoundException('Could not read file stream');
+      }
+    }
+
     return new StreamableFile(fileData.stream);
   }
 }
