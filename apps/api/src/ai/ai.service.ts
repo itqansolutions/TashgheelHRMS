@@ -84,6 +84,27 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       }
     });
 
+    const experience = [
+      {
+        companyName: 'Tashgheel Solutions',
+        title: 'Software Engineer',
+        startDate: '2023-01-01',
+        endDate: null,
+        isCurrent: true,
+        description: 'Developing HRMS modules and AI features.',
+      }
+    ];
+
+    const education = [
+      {
+        institution: 'King Saud University',
+        degree: 'Bachelor of Science',
+        fieldOfStudy: 'Computer Science',
+        startDate: '2018-09-01',
+        endDate: '2022-06-30',
+      }
+    ];
+
     return {
       firstName,
       lastName,
@@ -91,6 +112,8 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       phone: phoneMatch ? phoneMatch[0].trim() : '+1 (555) 019-2834',
       skills: [...new Set(skillsList)],
       aiSummary: `Extracted candidate profile for ${firstName} ${lastName}. Demonstrated background with skills in: ${skillsList.slice(0, 5).join(', ')}.`,
+      experience,
+      education,
     };
   }
 
@@ -169,6 +192,8 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
         - phone (string)
         - skills (array of strings)
         - aiSummary (string: a concise 2-sentence professional summary of the candidate)
+        - experience (array of objects: each object must have "companyName" (string), "title" (string), "startDate" (string in YYYY-MM-DD format), "endDate" (string or null), "isCurrent" (boolean), "description" (string or null))
+        - education (array of objects: each object must have "institution" (string), "degree" (string), "fieldOfStudy" (string or null), "startDate" (string in YYYY-MM-DD format), "endDate" (string or null))
 
         Resume Text:
         ${text}

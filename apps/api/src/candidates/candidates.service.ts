@@ -562,6 +562,19 @@ export class CandidatesService {
       return undefined;
     };
 
+    const parseDateSafe = (dateStr: any): Date => {
+      if (!dateStr) return new Date();
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? new Date() : d;
+    };
+
+    const parseEndDateSafe = (dateStr: any, isCurrent?: boolean): Date | null => {
+      if (isCurrent) return null;
+      if (!dateStr) return null;
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
     const email = cleanString(parsedData?.email);
     const phone = cleanString(parsedData?.phone);
     const firstName = cleanString(parsedData?.firstName) || 'Candidate';
@@ -614,9 +627,38 @@ export class CandidatesService {
                   },
                 }
               : undefined,
+            experience: Array.isArray(parsedData?.experience) && parsedData.experience.length > 0
+              ? {
+                  createMany: {
+                    data: parsedData.experience.map((exp: any) => ({
+                      companyName: cleanString(exp.companyName) || 'Company',
+                      title: cleanString(exp.title) || 'Role',
+                      startDate: parseDateSafe(exp.startDate),
+                      endDate: parseEndDateSafe(exp.endDate, exp.isCurrent),
+                      isCurrent: !!exp.isCurrent,
+                      description: cleanString(exp.description) || '',
+                    })),
+                  },
+                }
+              : undefined,
+            education: Array.isArray(parsedData?.education) && parsedData.education.length > 0
+              ? {
+                  createMany: {
+                    data: parsedData.education.map((edu: any) => ({
+                      institution: cleanString(edu.institution) || 'Institution',
+                      degree: cleanString(edu.degree) || 'Degree',
+                      fieldOfStudy: cleanString(edu.fieldOfStudy) || '',
+                      startDate: parseDateSafe(edu.startDate),
+                      endDate: parseEndDateSafe(edu.endDate),
+                    })),
+                  },
+                }
+              : undefined,
           },
           include: {
             skills: true,
+            experience: true,
+            education: true,
           },
         });
 

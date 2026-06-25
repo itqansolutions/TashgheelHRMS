@@ -121,6 +121,27 @@ export default function CompanyDetailPage() {
       return `${cleanApi.replace(/\/$/, '')}${resolvedUrl}`;
     }
 
+    // Rewrite Cloudflare R2 URLs to proxy via backend API
+    if (resolvedUrl.includes('r2.cloudflarestorage.com')) {
+      try {
+        const urlObj = new URL(resolvedUrl);
+        const parts = urlObj.pathname.split('/').filter(Boolean);
+        if (parts.length >= 3) {
+          const folder = parts[1];
+          const filename = parts.slice(2).join('/');
+          const relativePath = `/api/storage/file/${folder}/${filename}`;
+          
+          let cleanApi = apiUrl || 'http://localhost:4000';
+          if (!cleanApi.startsWith('http://') && !cleanApi.startsWith('https://')) {
+            cleanApi = `https://${cleanApi}`;
+          }
+          return `${cleanApi.replace(/\/$/, '')}${relativePath}`;
+        }
+      } catch (e) {
+        // Ignore and fallback
+      }
+    }
+
     // Handle localhost URL replacements
     if (apiUrl && (resolvedUrl.startsWith('http://localhost') || resolvedUrl.startsWith('http://127.0.0.1'))) {
       try {
