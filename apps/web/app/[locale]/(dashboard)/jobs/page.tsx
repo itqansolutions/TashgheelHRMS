@@ -33,7 +33,7 @@ interface Requisition {
   department: string;
   location: string;
   type: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'TEMPORARY' | 'INTERNSHIP';
-  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
   salaryMin: number | null;
   salaryMax: number | null;
   deadline: string | null;
@@ -121,7 +121,7 @@ export default function JobsPage() {
     requirementsEn: '',
     requirementsAr: '',
     deadline: '',
-    status: 'PENDING' as 'DRAFT' | 'PENDING',
+    status: 'PENDING_APPROVAL' as 'DRAFT' | 'PENDING_APPROVAL',
   });
 
   // Rejection Dialog State
@@ -211,7 +211,7 @@ export default function JobsPage() {
       requirementsEn: '',
       requirementsAr: '',
       deadline: '',
-      status: 'PENDING',
+      status: 'PENDING_APPROVAL',
     });
     setIsModalOpen(true);
   };
@@ -329,7 +329,7 @@ export default function JobsPage() {
     switch (status) {
       case 'APPROVED':
         return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-      case 'PENDING':
+      case 'PENDING_APPROVAL':
         return 'bg-amber-50 text-amber-600 border-amber-100';
       case 'REJECTED':
         return 'bg-rose-50 text-rose-600 border-rose-100';
@@ -453,7 +453,7 @@ export default function JobsPage() {
             {activeTab === 'requisitions' ? (
               <>
                 <option value="DRAFT">{locale === 'ar' ? 'مسودة' : 'Draft'}</option>
-                <option value="PENDING">{locale === 'ar' ? 'قيد الانتظار' : 'Pending'}</option>
+                <option value="PENDING_APPROVAL">{locale === 'ar' ? 'قيد الانتظار' : 'Pending Approval'}</option>
                 <option value="APPROVED">{locale === 'ar' ? 'معتمد' : 'Approved'}</option>
                 <option value="REJECTED">{locale === 'ar' ? 'مرفوض' : 'Rejected'}</option>
               </>
@@ -570,7 +570,7 @@ export default function JobsPage() {
                             <Eye className="h-4.5 w-4.5" />
                           </button>
 
-                          {req.status === 'PENDING' && canApprove && (
+                          {req.status === 'PENDING_APPROVAL' && canApprove && (
                             <>
                               <button
                                 onClick={() => handleApprove(req.id)}
@@ -888,7 +888,7 @@ export default function JobsPage() {
                     onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as any }))}
                     className="w-full rounded-xl border border-slate-200 bg-[#EBF0FA]/30 px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-[#00B67A] focus:bg-white transition-all"
                   >
-                    <option value="PENDING">{locale === 'ar' ? 'قيد الانتظار (طلب اعتماد)' : 'Pending Approval'}</option>
+                    <option value="PENDING_APPROVAL">{locale === 'ar' ? 'قيد الانتظار (طلب اعتماد)' : 'Pending Approval'}</option>
                     <option value="DRAFT">{locale === 'ar' ? 'مسودة' : 'Draft'}</option>
                   </select>
                 </div>

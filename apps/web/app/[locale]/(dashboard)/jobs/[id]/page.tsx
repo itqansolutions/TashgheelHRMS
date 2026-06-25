@@ -29,7 +29,7 @@ interface RequisitionDetails {
   department: string;
   location: string;
   type: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'TEMPORARY' | 'INTERNSHIP';
-  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
   salaryMin: number | null;
   salaryMax: number | null;
   descriptionEn: string;
@@ -222,7 +222,7 @@ export default function JobDetailPage() {
     switch (status) {
       case 'APPROVED':
         return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-      case 'PENDING':
+      case 'PENDING_APPROVAL':
         return 'bg-amber-50 text-amber-600 border-amber-100';
       case 'REJECTED':
         return 'bg-rose-50 text-rose-600 border-rose-100';
@@ -370,7 +370,7 @@ export default function JobDetailPage() {
             </div>
 
             {/* Action Buttons based on type */}
-            {!isOpening && requisition && requisition.status === 'PENDING' && canApprove && (
+            {!isOpening && requisition && requisition.status === 'PENDING_APPROVAL' && canApprove && (
               <div className="flex gap-3 border-t border-slate-100 pt-4">
                 <button
                   onClick={handleApprove}
