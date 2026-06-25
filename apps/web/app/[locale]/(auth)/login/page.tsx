@@ -50,9 +50,12 @@ export default function LoginPage() {
         setErrorMsg(t('invalidCredentials'));
       }
     } catch (err: any) {
-      setErrorMsg(
-        err.response?.data?.message || t('invalidCredentials')
-      );
+      if (err.response) {
+        setErrorMsg(err.response?.data?.message || t('invalidCredentials'));
+      } else {
+        // Network error or other failure
+        setErrorMsg(`Network Error: ${err.message} (Tried reaching: ${api.defaults.baseURL})`);
+      }
     } finally {
       setIsLoading(false);
     }
