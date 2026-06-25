@@ -207,9 +207,9 @@ export class InterviewsService {
     const interview = await this.findOne(id);
 
     const beforeValue = { ...interview };
-    delete beforeValue.application;
-    delete beforeValue.interviewers;
-    delete beforeValue.feedbacks;
+    delete (beforeValue as any).application;
+    delete (beforeValue as any).interviewers;
+    delete (beforeValue as any).feedbacks;
 
     const updated = await this.db.interview.update({
       where: { id },

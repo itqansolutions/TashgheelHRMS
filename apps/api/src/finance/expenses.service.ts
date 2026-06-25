@@ -14,7 +14,6 @@ export class ExpensesService {
         description: dto.description,
         amount: dto.amount,
         expenseDate: new Date(dto.expenseDate),
-        receiptUrl: dto.receiptUrl,
         recordedById: actorId,
       },
     });
@@ -74,7 +73,7 @@ export class ExpensesService {
   async update(id: string, dto: UpdateExpenseDto, actorId: string) {
     const expense = await this.findOne(id);
     const beforeValue = { ...expense };
-    delete beforeValue.recordedBy;
+    delete (beforeValue as any).recordedBy;
 
     const updated = await this.db.expense.update({
       where: { id },

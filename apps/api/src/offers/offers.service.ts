@@ -165,9 +165,9 @@ export class OffersService {
   async updateStatus(id: string, dto: UpdateOfferStatusDto, actorId: string) {
     const offer = await this.findOne(id);
     const beforeValue = { ...offer };
-    delete beforeValue.application;
-    delete beforeValue.creator;
-    delete beforeValue.approver;
+    delete (beforeValue as any).application;
+    delete (beforeValue as any).creator;
+    delete (beforeValue as any).approver;
 
     const updated = await this.db.offer.update({
       where: { id },
@@ -200,9 +200,9 @@ export class OffersService {
     }
 
     const beforeValue = { ...offer };
-    delete beforeValue.application;
-    delete beforeValue.creator;
-    delete beforeValue.approver;
+    delete (beforeValue as any).application;
+    delete (beforeValue as any).creator;
+    delete (beforeValue as any).approver;
 
     const updated = await this.db.offer.update({
       where: { id },
@@ -249,9 +249,9 @@ export class OffersService {
     }
 
     const beforeValue = { ...offer };
-    delete beforeValue.application;
-    delete beforeValue.creator;
-    delete beforeValue.approver;
+    delete (beforeValue as any).application;
+    delete (beforeValue as any).creator;
+    delete (beforeValue as any).approver;
 
     const updated = await this.db.offer.update({
       where: { id },

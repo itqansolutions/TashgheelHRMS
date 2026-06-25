@@ -35,7 +35,7 @@ export class ReplacementsService {
         where: { id: dto.placementId },
         data: {
           status: PlacementStatus.REPLACED,
-          guaranteeStatus: GuaranteeStatus.CLAIMED,
+          guaranteeStatus: GuaranteeStatus.VOIDED,
         },
       });
 
@@ -139,8 +139,8 @@ export class ReplacementsService {
   async update(id: string, dto: UpdateReplacementDto, actorId: string) {
     const replacement = await this.findOne(id);
     const beforeValue = { ...replacement };
-    delete beforeValue.placement;
-    delete beforeValue.replacementCandidate;
+    delete (beforeValue as any).placement;
+    delete (beforeValue as any).replacementCandidate;
 
     const updateData: any = { ...dto };
     if (dto.status === ReplacementStatus.COMPLETED && replacement.status !== ReplacementStatus.COMPLETED) {

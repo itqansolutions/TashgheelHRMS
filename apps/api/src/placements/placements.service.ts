@@ -170,10 +170,10 @@ export class PlacementsService {
   async update(id: string, dto: UpdatePlacementDto, actorId: string) {
     const placement = await this.findOne(id);
     const beforeValue = { ...placement };
-    delete beforeValue.application;
-    delete beforeValue.offer;
-    delete beforeValue.replacements;
-    delete beforeValue.invoices;
+    delete (beforeValue as any).application;
+    delete (beforeValue as any).offer;
+    delete (beforeValue as any).replacements;
+    delete (beforeValue as any).invoices;
 
     const updated = await this.db.placement.update({
       where: { id },

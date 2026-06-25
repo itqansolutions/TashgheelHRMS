@@ -122,10 +122,10 @@ export class InvoicesService {
   async updateStatus(id: string, dto: UpdateInvoiceStatusDto, actorId: string) {
     const invoice = await this.findOne(id);
     const beforeValue = { ...invoice };
-    delete beforeValue.items;
-    delete beforeValue.payments;
-    delete beforeValue.company;
-    delete beforeValue.placement;
+    delete (beforeValue as any).items;
+    delete (beforeValue as any).payments;
+    delete (beforeValue as any).company;
+    delete (beforeValue as any).placement;
 
     const updated = await this.db.invoice.update({
       where: { id },
