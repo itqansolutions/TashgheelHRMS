@@ -19,6 +19,7 @@ import {
   MessageSquare,
   Loader2,
   X,
+  Sparkles,
 } from 'lucide-react';
 
 interface Interview {
@@ -52,6 +53,43 @@ export default function InterviewsPage() {
 
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // AI Questions Modal state
+  const [isQuestionsModalOpen, setIsQuestionsModalOpen] = useState(false);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionsText, setQuestionsText] = useState('');
+  const [questionsMeta, setQuestionsMeta] = useState({ candidateName: '', jobTitle: '' });
+
+  const handleGenerateAiQuestions = async (
+    candidateId: string,
+    jobOpeningId: string,
+    candidateName: string,
+    jobTitle: string,
+  ) => {
+    setQuestionsMeta({ candidateName, jobTitle });
+    setQuestionsText('');
+    setQuestionsLoading(true);
+    setIsQuestionsModalOpen(true);
+
+    try {
+      const response = await api.post('/ai/generate-questions', { candidateId, jobOpeningId });
+      if (response.data?.success) {
+        setQuestionsText(response.data.data);
+      } else {
+        setQuestionsText('Failed to generate questions. Please try again.');
+      }
+    } catch (err: any) {
+      setQuestionsText(err.response?.data?.message || 'Error occurred while contacting AI generator.');
+    } finally {
+      setQuestionsLoading(false);
+    }
+  };
+
+  const handleCopyQuestions = () => {
+    navigator.clipboard.writeText(questionsText);
+    setSuccessMsg(locale === 'ar' ? 'تم نسخ الأسئلة إلى الحافظة' : 'Questions copied to clipboard');
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
 
   const limit = 20;
 
@@ -214,12 +252,79 @@ export default function InterviewsPage() {
                 </div>
               </div>
               <div className="border-t border-slate-100 p-4 bg-white flex justify-end gap-2">
+                 <button
+                   onClick={() => handleGenerateAiQuestions(int.application.candidate.id, int.application.jobOpening.id, `${int.application.candidate.firstName} ${int.application.candidate.lastName}`, int.application.jobOpening.title)}
+                   className="text-xs font-bold text-white bg-[#00B67A] hover:bg-[#009b67] px-3 py-2 rounded-lg transition-colors flex items-center gap-1 active:scale-[0.98]"
+                 >
+                   <Sparkles className="h-3.5 w-3.5" />
+                   <span>{locale === 'ar' ? 'أسئلة الذكاء الاصطناعي' : 'AI Questions'}</span>
+                 </button>
                  <button className="text-xs font-bold text-[#2A2C4E] bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg transition-colors">
                    {t('logFeedback')}
                  </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* AI Questions Modal */}
+      {isQuestionsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1C29]/40 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-[#1A1C29] flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-[#00B67A]" />
+                  <span>{locale === 'ar' ? 'أسئلة المقابلة المقترحة بالذكاء الاصطناعي' : 'AI Suggested Interview Questions'}</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {locale === 'ar'
+                    ? `مخصصة للمترشح: ${questionsMeta.candidateName} لوظيفة ${questionsMeta.jobTitle}`
+                    : `Tailored for ${questionsMeta.candidateName} applying to ${questionsMeta.jobTitle}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsQuestionsModalOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-1">
+              {questionsLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#00B67A]" />
+                  <p className="text-xs text-slate-500 font-medium">
+                    {locale === 'ar' ? 'جاري تحليل الخلفية المهنية وتوليد الأسئلة...' : 'Analyzing professional background and generating questions...'}
+                  </p>
+                </div>
+              ) : (
+                <div className="prose prose-slate max-w-none text-sm text-slate-700 whitespace-pre-line leading-relaxed bg-slate-50/50 p-5 rounded-2xl border border-slate-100/50">
+                  {questionsText}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-100 pt-4 mt-4">
+              <button
+                type="button"
+                onClick={handleCopyQuestions}
+                disabled={questionsLoading || !questionsText}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#00B67A] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#009b67] active:scale-[0.98] disabled:opacity-50 transition-all"
+              >
+                {locale === 'ar' ? 'نسخ الأسئلة' : 'Copy to Clipboard'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsQuestionsModalOpen(false)}
+                className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-50 active:scale-[0.98] transition-all"
+              >
+                {locale === 'ar' ? 'إغلاق' : 'Close'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

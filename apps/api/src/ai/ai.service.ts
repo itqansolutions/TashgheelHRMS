@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { GoogleGenAI } from '@google/genai';
 import { DatabaseService } from '../database/database.service';
-import { GenerateJdDto } from './dto/ai.dto';
+import { GenerateJdDto, GenerateQuestionsDto } from './dto/ai.dto';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -64,7 +64,10 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
     const phoneMatch = text.match(/[\+]?[0-9\s\-()]{7,20}/);
     
     const cleanText = text.replace(/[\r\n\t]+/g, ' ').trim();
-    const words = cleanText.split(/\s+/).filter(w => w.length > 2 && /^[a-zA-Z]+$/.test(w));
+    const blacklist = ['pdf', 'obj', 'stream', 'endobj', 'xref', 'trailer', 'startxref', 'eof'];
+    const words = cleanText.split(/\s+/)
+      .filter(w => w.length > 2 && /^[a-zA-Z]+$/.test(w))
+      .filter(w => !blacklist.includes(w.toLowerCase()));
     const firstName = words[0] || 'John';
     const lastName = words[1] || 'Doe';
 
@@ -234,5 +237,98 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
     `, jobId, limit);
 
     return candidates;
+  }
+
+  /**
+   * Generates tailored interview questions based on Candidate and Job Opening profiles.
+   */
+  async generateInterviewQuestions(dto: GenerateQuestionsDto): Promise<string> {
+    const candidate = await this.db.candidate.findUnique({
+      where: { id: dto.candidateId },
+      include: {
+        skills: true,
+        experience: true,
+      },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found');
+    }
+
+    const jobOpening = await this.db.jobOpening.findUnique({
+      where: { id: dto.jobOpeningId },
+      include: {
+        requisition: true,
+      },
+    });
+
+    if (!jobOpening) {
+      throw new NotFoundException('Job Opening not found');
+    }
+
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
+    if (this.isMockKey(apiKey)) {
+      this.logger.warn('Mock or missing GEMINI_API_KEY detected. Returning mock questions.');
+      return this.getMockInterviewQuestions(candidate, jobOpening);
+    }
+
+    try {
+      const skillsText = candidate.skills.map((s) => s.skillName).join(', ');
+      const expText = candidate.experience.map((e) => `${e.title} at ${e.companyName}`).join(', ');
+      const jobTitle = jobOpening.title;
+      const jobDesc = jobOpening.requisition.descriptionEn;
+      const jobReqs = jobOpening.requisition.requirementsEn;
+
+      const prompt = `
+        You are an expert HR Recruitment Specialist and Technical Interviewer.
+        Generate a list of 5 tailored interview questions for candidate ${candidate.firstName} ${candidate.lastName} who is applying for the position of "${jobTitle}".
+        
+        Candidate Context:
+        - Skills: ${skillsText || 'Not specified'}
+        - Experience: ${expText || 'Not specified'}
+        - AI Summary: ${candidate.aiSummary || 'Not specified'}
+        
+        Job Requirements Context:
+        - Description: ${jobDesc}
+        - Key Requirements: ${jobReqs}
+
+        Write the questions in professional English, and also provide a brief, helpful tip or expected answer guideline for each question.
+        Format the response in clean Markdown with clear headings or numbered lists.
+      `;
+
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      return response.text || '';
+    } catch (error) {
+      this.logger.error('Failed to generate interview questions via Gemini, returning mock questions', error);
+      return this.getMockInterviewQuestions(candidate, jobOpening);
+    }
+  }
+
+  private getMockInterviewQuestions(candidate: any, jobOpening: any): string {
+    const jobTitle = jobOpening.title;
+    const skillsText = candidate.skills.map((s: any) => s.skillName).join(', ') || 'general skills';
+    return `# Suggested Interview Questions for ${candidate.firstName} ${candidate.lastName}
+## Position: ${jobTitle}
+
+Here is a list of customized interview questions based on the candidate's skills (${skillsText}) and the requirements for the ${jobTitle} role:
+
+1. **How do you leverage your experience in similar environments to hit the ground running as a ${jobTitle}?**
+   * *Evaluation Guideline*: Look for specific project details, their workflow methodologies, and how they handle fast transition times.
+
+2. **Based on your background, could you explain a challenging project you worked on that required skills in ${skillsText.split(',')[0] || 'problem solving'}?**
+   * *Evaluation Guideline*: The candidate should describe the problem clearly, detail their action steps, and explain the positive outcome (STAR method).
+
+3. **Our team relies on close collaboration and standard procedures. How do you handle cases where requirements change rapidly during a sprint or project phase?**
+   * *Evaluation Guideline*: Evaluate their flexibility, communications style under pressure, and adaptability.
+
+4. **Which tools or best practices do you consider essential for success as a ${jobTitle}, and how have you applied them in past roles?**
+   * *Evaluation Guideline*: Listen for modern technical vocabulary, adherence to standard industry guidelines, and practical examples.
+
+5. **Why are you interested in this role at our company, and how does it align with your long-term career aspirations?**
+   * *Evaluation Guideline*: Look for genuine interest in the company's product/mission and a desire to grow within the team.`;
   }
 }

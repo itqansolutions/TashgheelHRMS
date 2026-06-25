@@ -17,3 +17,15 @@ export class GenerateJdDto {
   @IsOptional()
   keywords?: string;
 }
+
+export class GenerateQuestionsDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  candidateId: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  jobOpeningId: string;
+}

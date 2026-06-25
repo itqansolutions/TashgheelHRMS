@@ -10,14 +10,15 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  BadRequestException,
 } from '@nestjs/common';
 import { AiService } from './ai.service';
-import { GenerateJdDto } from './dto/ai.dto';
+import { GenerateJdDto, GenerateQuestionsDto } from './dto/ai.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 
 @ApiTags('AI Features')
 @ApiBearerAuth()
@@ -59,11 +60,18 @@ export class AiController {
     file: Express.Multer.File,
   ) {
     let text = '';
-    try {
-      const pdfData = await pdfParse(file.buffer);
-      text = pdfData.text.substring(0, 10000); // Take up to 10k chars
-    } catch (err) {
-      // Fallback if not a PDF
+    const isPdf = file.originalname?.toLowerCase().endsWith('.pdf') || file.mimetype === 'application/pdf';
+
+    if (isPdf) {
+      try {
+        const parser = new PDFParse({ data: file.buffer });
+        const pdfData = await parser.getText();
+        text = (pdfData.text || '').substring(0, 10000); // Take up to 10k chars
+      } catch (err) {
+        throw new BadRequestException('Failed to extract text from the PDF file. Please ensure it is a valid, unencrypted PDF.');
+      }
+    } else {
+      // Fallback if not a PDF (e.g. text file)
       text = file.buffer.toString('utf-8').substring(0, 5000);
     }
     
@@ -76,5 +84,12 @@ export class AiController {
   async findMatches(@Param('id') id: string) {
     const candidates = await this.aiService.findMatchingCandidatesForJob(id, 10);
     return { success: true, data: candidates };
+  }
+
+  @Post('generate-questions')
+  @ApiOperation({ summary: 'Generate interview questions for a candidate applying to a job opening' })
+  async generateQuestions(@Body() dto: GenerateQuestionsDto) {
+    const questions = await this.aiService.generateInterviewQuestions(dto);
+    return { success: true, data: questions };
   }
 }

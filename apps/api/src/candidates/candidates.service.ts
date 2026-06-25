@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { StorageService } from '../storage/storage.service';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
@@ -95,6 +95,16 @@ export class CandidatesService {
         },
       });
 
+      return candidate;
+    }).then(async (candidate) => {
+      try {
+        const skillsText = dto.skills ? dto.skills.map((s) => s.skillName).join(', ') : '';
+        const experienceText = dto.experience ? dto.experience.map((e) => `${e.title} at ${e.companyName}`).join(', ') : '';
+        const textToEmbed = `${candidate.firstName} ${candidate.lastName}. Skills: ${skillsText}. Experience: ${experienceText}.`;
+        await this.aiService.syncCandidateEmbedding(candidate.id, textToEmbed);
+      } catch (err) {
+        this.logger.error(`Failed to sync embedding for candidate ${candidate.id}`, err);
+      }
       return candidate;
     });
   }
@@ -287,6 +297,16 @@ export class CandidatesService {
         },
       });
 
+      return updated;
+    }).then(async (updated) => {
+      try {
+        const skillsText = updated.skills ? updated.skills.map((s) => s.skillName).join(', ') : '';
+        const experienceText = updated.experience ? updated.experience.map((e) => `${e.title} at ${e.companyName}`).join(', ') : '';
+        const textToEmbed = `${updated.firstName} ${updated.lastName}. Skills: ${skillsText}. Experience: ${experienceText}.`;
+        await this.aiService.syncCandidateEmbedding(updated.id, textToEmbed);
+      } catch (err) {
+        this.logger.error(`Failed to sync embedding for updated candidate ${updated.id}`, err);
+      }
       return updated;
     });
   }
@@ -514,12 +534,19 @@ export class CandidatesService {
   }
 
   async parseAndCreateFromCv(file: Express.Multer.File, actorId: string) {
-    const pdfParse = require('pdf-parse');
+    const { PDFParse } = require('pdf-parse');
     let text = '';
-    try {
-      const pdfData = await pdfParse(file.buffer);
-      text = pdfData.text.substring(0, 10000); // Take up to 10k chars
-    } catch (err) {
+    const isPdf = file.originalname?.toLowerCase().endsWith('.pdf') || file.mimetype === 'application/pdf';
+
+    if (isPdf) {
+      try {
+        const parser = new PDFParse({ data: file.buffer });
+        const pdfData = await parser.getText();
+        text = (pdfData.text || '').substring(0, 10000); // Take up to 10k chars
+      } catch (err) {
+        throw new BadRequestException('Failed to extract text from the PDF file. Please ensure it is a valid, unencrypted PDF.');
+      }
+    } else {
       // Fallback if not a PDF (e.g. text/docx)
       text = file.buffer.toString('utf-8').substring(0, 5000);
     }

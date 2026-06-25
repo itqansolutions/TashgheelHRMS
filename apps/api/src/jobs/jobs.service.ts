@@ -1,12 +1,18 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import { UpdateRequisitionDto } from './dto/update-requisition.dto';
 import { JobRequisitionStatus, JobOpeningStatus } from '@repo/database';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class JobsService {
-  constructor(private readonly db: DatabaseService) {}
+  private readonly logger = new Logger(JobsService.name);
+
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly aiService: AiService,
+  ) {}
 
   // --- REQUISITIONS ---
 
@@ -185,6 +191,14 @@ export class JobsService {
       });
 
       return { requisition: updatedRequisition, jobOpening };
+    }).then(async (result) => {
+      try {
+        const textToEmbed = `${result.jobOpening.title} position in the ${requisition.department} department. Location: ${requisition.location}. Job Type: ${requisition.type}. Description: ${requisition.descriptionEn}. Requirements: ${requisition.requirementsEn}.`;
+        await this.aiService.syncJobOpeningEmbedding(result.jobOpening.id, textToEmbed);
+      } catch (err) {
+        this.logger.error(`Failed to sync embedding for job opening ${result.jobOpening.id}`, err);
+      }
+      return result;
     });
   }
 
