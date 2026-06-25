@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+let RAW_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+if (!RAW_API_URL.startsWith('http://') && !RAW_API_URL.startsWith('https://')) {
+  RAW_API_URL = `https://${RAW_API_URL}`;
+}
 const API_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
 
 export const api = axios.create({
