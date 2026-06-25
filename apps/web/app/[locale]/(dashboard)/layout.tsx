@@ -98,7 +98,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: t('interviews'), href: `/${locale}/interviews`, icon: Calendar },
     { name: t('offers'), href: `/${locale}/offers`, icon: FileSpreadsheet },
     { name: t('placements'), href: `/${locale}/placements`, icon: ShieldCheck },
-    { name: t('finance'), href: `/${locale}/finance`, icon: Coins },
+    { name: t('finance'), href: `/${locale}/finance/invoices`, icon: Coins },
     { name: 'Analytics & Reports', href: `/${locale}/analytics`, icon: FileSpreadsheet },
     { name: t('users'), href: `/${locale}/users`, icon: Users, permission: 'users:read' },
     { name: t('roles'), href: `/${locale}/roles`, icon: ShieldCheck, permission: 'users:read' },

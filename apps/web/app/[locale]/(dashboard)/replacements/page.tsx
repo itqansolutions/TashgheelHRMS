@@ -34,7 +34,7 @@ interface Replacement {
 }
 
 export default function ReplacementsPage() {
-  const t = useTranslations('replacements');
+  const t = useTranslations('ats.replacements');
   const params = useParams();
   const router = useRouter();
   const locale = params.locale as string;

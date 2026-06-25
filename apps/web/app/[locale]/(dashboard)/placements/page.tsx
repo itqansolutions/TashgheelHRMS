@@ -33,7 +33,7 @@ interface Placement {
 }
 
 export default function PlacementsPage() {
-  const t = useTranslations('placements');
+  const t = useTranslations('ats.placements');
   const params = useParams();
   const router = useRouter();
   const locale = params.locale as string;
