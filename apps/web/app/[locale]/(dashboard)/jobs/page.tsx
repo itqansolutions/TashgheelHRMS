@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   AlertCircle,
   FileText,
+  Sparkles,
 } from 'lucide-react';
 
 interface Company {
@@ -106,6 +107,7 @@ export default function JobsPage() {
   // Requisition Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingJD, setIsGeneratingJD] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     department: '',
@@ -243,6 +245,32 @@ export default function JobsPage() {
       setErrorMsg(err.response?.data?.message || 'Failed to create requisition');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleGenerateJD = async () => {
+    if (!formData.title) {
+      setErrorMsg(locale === 'ar' ? 'يرجى إدخال المسمى الوظيفي أولاً' : 'Please enter a Job Title first');
+      return;
+    }
+    setIsGeneratingJD(true);
+    setErrorMsg(null);
+    try {
+      const res = await api.post('/ai/generate-jd', {
+        title: formData.title,
+        department: formData.department,
+        keywords: formData.requirementsEn,
+      });
+      if (res.data?.success) {
+        setFormData(prev => ({
+          ...prev,
+          descriptionEn: res.data.data,
+        }));
+      }
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.message || 'Failed to generate Job Description');
+    } finally {
+      setIsGeneratingJD(false);
     }
   };
 
@@ -875,9 +903,20 @@ export default function JobsPage() {
                 {/* English Descriptions */}
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Description (English) <span className="text-[#E54B4B]">*</span>
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Description (English) <span className="text-[#E54B4B]">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        disabled={isGeneratingJD}
+                        onClick={handleGenerateJD}
+                        className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                      >
+                        {isGeneratingJD ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                        {locale === 'ar' ? 'توليد بالذكاء الاصطناعي' : 'AI Generate'}
+                      </button>
+                    </div>
                     <textarea
                       required
                       rows={3}

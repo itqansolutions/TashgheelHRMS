@@ -46,6 +46,7 @@ export default function NewCandidatePage() {
 
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Form State
@@ -103,6 +104,40 @@ export default function NewCandidatePage() {
     const nextEdu = [...educations];
     nextEdu[idx] = { ...nextEdu[idx], [field]: val } as Education;
     setEducations(nextEdu);
+  };
+
+  const handleParseResume = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    setIsParsing(true);
+    setErrorMsg(null);
+    try {
+      const res = await api.post('/ai/parse-resume', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (res.data?.success) {
+        const parsed = res.data.data;
+        setPersonalInfo(prev => ({
+          ...prev,
+          firstName: parsed.firstName || prev.firstName,
+          lastName: parsed.lastName || prev.lastName,
+          email: parsed.email || prev.email,
+          phone: parsed.phone || prev.phone,
+        }));
+        if (parsed.skills && Array.isArray(parsed.skills)) {
+          setSkills(parsed.skills.map((s: string) => ({ skillName: s, proficiency: 'INTERMEDIATE' })));
+        }
+        // AI parse successful, jump to step 1
+        setStep(1);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.message || 'Failed to parse resume via AI');
+    } finally {
+      setIsParsing(false);
+    }
   };
 
   const addSkill = () => {
@@ -257,6 +292,40 @@ export default function NewCandidatePage() {
           </div>
         ))}
       </div>
+
+      {/* AI Resume Upload Tool */}
+      {step === 1 && (
+        <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 flex flex-col sm:flex-row items-center gap-4 justify-between">
+          <div className="flex items-start gap-4">
+            <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600">
+              <Upload className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-[#2A2C4E]">
+                {locale === 'ar' ? 'السيرة الذاتية الذكية' : 'Smart Resume Parse'}
+              </h3>
+              <p className="text-sm text-slate-500">
+                {locale === 'ar' 
+                  ? 'قم برفع السيرة الذاتية وسيقوم الذكاء الاصطناعي بتعبئة البيانات تلقائياً.' 
+                  : 'Upload a resume and our AI will automatically fill out the form.'}
+              </p>
+            </div>
+          </div>
+          <div className="relative">
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.txt"
+              onChange={handleParseResume}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              disabled={isParsing}
+            />
+            <button disabled={isParsing} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2 pointer-events-none">
+              {isParsing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+              <span>{locale === 'ar' ? 'رفع السيرة الذاتية' : 'Upload Resume'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Alert Error */}
       {errorMsg && (

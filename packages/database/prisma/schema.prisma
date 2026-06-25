@@ -1,10 +1,12 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 // ==========================================
@@ -150,7 +152,7 @@ model Contact {
   phone       String?
   linkedinUrl String?
   isPrimary   Boolean       @default(false)
-  createdAt   DateTime      @default(now())
+  createdAt      DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   
   company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -289,6 +291,7 @@ model JobOpening {
   status        JobOpeningStatus @default(OPEN)
   openedAt      DateTime         @default(now())
   closedAt      DateTime?
+  embedding     Unsupported("vector(768)")?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   
@@ -321,10 +324,10 @@ model Candidate {
   deletedAt       DateTime?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
-  aiSummary       String?
+  aiSummary       String?               @db.Text
   
-  // Custom type for vector database search (1536 dim for OpenAI embeddings)
-  // embedding       Unsupported("vector(1536)")?
+  // Custom type for vector database search (768 dim for Gemini embeddings)
+  embedding       Unsupported("vector(768)")?
 
   experience      CandidateExperience[]
   education       CandidateEducation[]

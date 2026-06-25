@@ -21,6 +21,7 @@ import { OffersModule } from './offers/offers.module';
 import { PlacementsModule } from './placements/placements.module';
 import { ReplacementsModule } from './replacements/replacements.module';
 import { FinanceModule } from './finance/finance.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { FinanceModule } from './finance/finance.module';
     PlacementsModule,
     ReplacementsModule,
     FinanceModule,
+    AiModule,
   ],
 })
 export class AppModule {}

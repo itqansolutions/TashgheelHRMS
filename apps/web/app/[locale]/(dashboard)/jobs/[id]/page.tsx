@@ -20,6 +20,7 @@ import {
   FileText,
   User,
   ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 
 interface RequisitionDetails {
@@ -108,6 +109,10 @@ export default function JobDetailPage() {
   const [opening, setOpening] = useState<OpeningDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [activeSubTab, setActiveSubTab] = useState<'applied' | 'ai_matches'>('applied');
+  const [aiMatches, setAiMatches] = useState<any[]>([]);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+
   // Rejection Dialog State
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -138,11 +143,32 @@ export default function JobDetailPage() {
       });
   };
 
+  const fetchAiMatches = async () => {
+    if (!opening) return;
+    setLoadingMatches(true);
+    try {
+      const res = await api.get(`/ai/jobs/${opening.id}/matches`);
+      if (res.data?.success) {
+        setAiMatches(res.data.data);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch AI matches', err);
+    } finally {
+      setLoadingMatches(false);
+    }
+  };
+
   useEffect(() => {
     if (id) {
       fetchDetails();
     }
   }, [id, isOpening]);
+
+  useEffect(() => {
+    if (activeSubTab === 'ai_matches' && aiMatches.length === 0) {
+      fetchAiMatches();
+    }
+  }, [activeSubTab, opening]);
 
   const handleApprove = async () => {
     if (!requisition) return;
@@ -485,63 +511,135 @@ export default function JobDetailPage() {
             </div>
           </div>
 
-          {/* Applicants List Panel (Only for Openings) */}
+          {/* Applicants & AI Matches Panel (Only for Openings) */}
           {isOpening && opening && (
             <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-[#1A1C29] border-b border-slate-100 pb-3">
-                {locale === 'ar' ? 'المترشحين المتقدمين' : 'Applied Candidates'}
-              </h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-4">
+                <div className="flex space-x-6 rtl:space-x-reverse">
+                  <button
+                    onClick={() => setActiveSubTab('applied')}
+                    className={`pb-3 text-base font-bold transition-all border-b-2 ${
+                      activeSubTab === 'applied'
+                        ? 'border-[#00B67A] text-[#1A1C29]'
+                        : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    {locale === 'ar' ? 'المترشحين المتقدمين' : 'Applied Candidates'}
+                  </button>
+                  <button
+                    onClick={() => setActiveSubTab('ai_matches')}
+                    className={`pb-3 text-base font-bold transition-all border-b-2 flex items-center gap-1.5 ${
+                      activeSubTab === 'ai_matches'
+                        ? 'border-indigo-600 text-indigo-700'
+                        : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    <span>{locale === 'ar' ? 'ترشيحات الذكاء الاصطناعي' : 'AI Recommended Matches'}</span>
+                  </button>
+                </div>
+              </div>
 
-              {opening.applications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-8 text-center">
-                  <User className="mb-3 h-10 w-10 text-slate-300" />
-                  <p className="text-sm text-slate-400">
-                    {locale === 'ar' ? 'لا يوجد مترشحين متقدمين لهذه الوظيفة حالياً.' : 'No candidates have applied to this job yet.'}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        <th className="py-2.5 px-4 rtl:text-right">{t('candidates.firstName')}</th>
-                        <th className="py-2.5 px-4 rtl:text-right">{t('candidates.email')}</th>
-                        <th className="py-2.5 px-4 rtl:text-right">{locale === 'ar' ? 'تاريخ التقديم' : 'Applied Date'}</th>
-                        <th className="py-2.5 px-4 rtl:text-right">{locale === 'ar' ? 'المرحلة الحالية' : 'Stage'}</th>
-                        <th className="py-2.5 px-4 text-right rtl:text-left"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-sm">
-                      {opening.applications.map((app) => (
-                        <tr key={app.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="py-3 px-4 font-bold text-[#1A1C29] rtl:text-right">
-                            {app.candidate.firstName} {app.candidate.lastName}
-                          </td>
-                          <td className="py-3 px-4 text-slate-500 rtl:text-right">
-                            {app.candidate.email}
-                          </td>
-                          <td className="py-3 px-4 text-slate-400 rtl:text-right">
-                            {new Date(app.createdAt).toLocaleDateString(locale)}
-                          </td>
-                          <td className="py-3 px-4 rtl:text-right">
-                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                              {app.stage.replace(/_/g, ' ')}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right rtl:text-left">
-                            <button
-                              onClick={() => router.push(`/${locale}/candidates/${app.candidate.id}`)}
-                              className="text-[#00B67A] hover:underline inline-flex items-center gap-1 text-xs font-bold"
-                            >
-                              <span>{locale === 'ar' ? 'الملف الشخصي' : 'View Profile'}</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </button>
-                          </td>
+              {activeSubTab === 'applied' ? (
+                opening.applications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-8 text-center">
+                    <User className="mb-3 h-10 w-10 text-slate-300" />
+                    <p className="text-sm text-slate-400">
+                      {locale === 'ar' ? 'لا يوجد مترشحين متقدمين لهذه الوظيفة حالياً.' : 'No candidates have applied to this job yet.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-xs font-bold uppercase tracking-wider text-slate-400">
+                          <th className="py-2.5 px-4 rtl:text-right">{t('candidates.firstName')}</th>
+                          <th className="py-2.5 px-4 rtl:text-right">{t('candidates.email')}</th>
+                          <th className="py-2.5 px-4 rtl:text-right">{locale === 'ar' ? 'تاريخ التقديم' : 'Applied Date'}</th>
+                          <th className="py-2.5 px-4 rtl:text-right">{locale === 'ar' ? 'المرحلة الحالية' : 'Stage'}</th>
+                          <th className="py-2.5 px-4 text-right rtl:text-left"></th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-sm">
+                        {opening.applications.map((app) => (
+                          <tr key={app.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3 px-4 font-bold text-[#1A1C29] rtl:text-right">
+                              {app.candidate.firstName} {app.candidate.lastName}
+                            </td>
+                            <td className="py-3 px-4 text-slate-500 rtl:text-right">
+                              {app.candidate.email}
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 rtl:text-right">
+                              {new Date(app.createdAt).toLocaleDateString(locale)}
+                            </td>
+                            <td className="py-3 px-4 rtl:text-right">
+                              <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                                {app.stage.replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right rtl:text-left">
+                              <button
+                                onClick={() => router.push(`/${locale}/candidates/${app.candidate.id}`)}
+                                className="text-[#00B67A] hover:underline inline-flex items-center gap-1 text-xs font-bold"
+                              >
+                                <span>{locale === 'ar' ? 'الملف الشخصي' : 'View Profile'}</span>
+                                <ExternalLink className="h-3 w-3" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              ) : (
+                /* AI Matches Tab */
+                loadingMatches ? (
+                  <div className="flex flex-col items-center justify-center p-8 text-center text-indigo-400">
+                    <Loader2 className="h-8 w-8 animate-spin mb-3" />
+                    <p className="text-sm font-semibold text-indigo-600">
+                      {locale === 'ar' ? 'جاري مطابقة المترشحين باستخدام الذكاء الاصطناعي...' : 'AI is scanning the database for matches...'}
+                    </p>
+                  </div>
+                ) : aiMatches.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-8 text-center">
+                    <Sparkles className="mb-3 h-10 w-10 text-slate-300" />
+                    <p className="text-sm text-slate-400">
+                      {locale === 'ar' ? 'لم يتم العثور على ترشيحات مطابقة بقوة.' : 'No highly matching candidates found in the database.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {aiMatches.map((match: any) => (
+                      <div key={match.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 hover:bg-indigo-50/80 transition-colors gap-4">
+                        <div>
+                          <h4 className="font-bold text-[#2A2C4E]">
+                            {match.firstName} {match.lastName}
+                          </h4>
+                          <p className="text-xs text-slate-500 mt-1">{match.email}</p>
+                          {match.aiSummary && (
+                            <p className="text-xs text-indigo-900 mt-2 line-clamp-2 max-w-xl">
+                              {match.aiSummary}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                            <Sparkles className="h-3 w-3" />
+                            <span>{Math.round(match.match_score * 100)}% Match</span>
+                          </div>
+                          <button
+                            onClick={() => router.push(`/${locale}/candidates/${match.id}`)}
+                            className="text-[#00B67A] hover:underline inline-flex items-center gap-1 text-xs font-bold"
+                          >
+                            <span>{locale === 'ar' ? 'الملف الشخصي' : 'View Profile'}</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
             </div>
           )}
