@@ -161,7 +161,7 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       `;
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-pro',
         contents: prompt,
       });
 
@@ -200,7 +200,7 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       `;
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-pro',
         contents: prompt,
       });
 
@@ -322,7 +322,7 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       `;
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-pro',
         contents: prompt,
       });
 
