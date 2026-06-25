@@ -588,7 +588,7 @@ export class CandidatesService {
           phone: phone,
           aiSummary: parsedData.aiSummary || '',
           availability: 'AVAILABLE',
-          skills: parsedData.skills && parsedData.skills.length > 0
+          skills: Array.isArray(parsedData.skills) && parsedData.skills.length > 0
             ? {
                 createMany: {
                   data: parsedData.skills.map((skillName: string) => ({
@@ -647,7 +647,8 @@ export class CandidatesService {
 
     // Sync candidate embedding based on AI summary and skills to support vector matching
     try {
-      const textToEmbed = `${candidate.firstName} ${candidate.lastName}. ${candidate.aiSummary || ''}. Skills: ${(parsedData.skills || []).join(', ')}`;
+      const skillsArray = Array.isArray(parsedData.skills) ? parsedData.skills : [];
+      const textToEmbed = `${candidate.firstName} ${candidate.lastName}. ${candidate.aiSummary || ''}. Skills: ${skillsArray.join(', ')}`;
       await this.aiService.syncCandidateEmbedding(candidate.id, textToEmbed);
     } catch (embedError) {
       this.logger.error(`Failed to sync candidate embedding for candidate ${candidate.id}`, embedError);

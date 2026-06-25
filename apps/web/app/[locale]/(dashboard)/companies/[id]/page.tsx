@@ -103,19 +103,45 @@ export default function CompanyDetailPage() {
 
   const getDocumentUrl = (url: string) => {
     if (!url) return '';
+    let resolvedUrl = url;
+    
+    // Add protocol prefix if missing for absolute URLs
+    if (!resolvedUrl.startsWith('http://') && !resolvedUrl.startsWith('https://') && !resolvedUrl.startsWith('/')) {
+      resolvedUrl = `https://${resolvedUrl}`;
+    }
+
     const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-    if (apiUrl && (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1'))) {
+
+    // Handle relative path (starts with /)
+    if (resolvedUrl.startsWith('/')) {
+      let cleanApi = apiUrl || 'http://localhost:4000';
+      if (!cleanApi.startsWith('http://') && !cleanApi.startsWith('https://')) {
+        cleanApi = `https://${cleanApi}`;
+      }
+      return `${cleanApi.replace(/\/$/, '')}${resolvedUrl}`;
+    }
+
+    // Handle localhost URL replacements
+    if (apiUrl && (resolvedUrl.startsWith('http://localhost') || resolvedUrl.startsWith('http://127.0.0.1'))) {
       try {
-        const urlObj = new URL(url);
-        const apiDomain = new URL(apiUrl);
+        const urlObj = new URL(resolvedUrl);
+        let apiCleanUrl = apiUrl;
+        if (!apiCleanUrl.startsWith('http://') && !apiCleanUrl.startsWith('https://')) {
+          apiCleanUrl = `https://${apiCleanUrl}`;
+        }
+        const apiDomain = new URL(apiCleanUrl);
         urlObj.protocol = apiDomain.protocol;
         urlObj.host = apiDomain.host;
         return urlObj.toString();
       } catch (e) {
-        return url.replace(/^http:\/\/(localhost|127\.0\.0\.1):\d*/, apiUrl.replace(/\/$/, ''));
+        let cleanApi = apiUrl;
+        if (!cleanApi.startsWith('http://') && !cleanApi.startsWith('https://')) {
+          cleanApi = `https://${cleanApi}`;
+        }
+        return resolvedUrl.replace(/^http:\/\/(localhost|127\.0\.0\.1):\d*/, cleanApi.replace(/\/$/, ''));
       }
     }
-    return url;
+    return resolvedUrl;
   };
 
   const [company, setCompany] = useState<Company | null>(null);

@@ -75,7 +75,10 @@ export class StorageService {
 
     const port = process.env.PORT ?? 4000;
     const apiPrefix = 'api';
-    const baseUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || `http://localhost:${port}`;
+    let baseUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || `http://localhost:${port}`;
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = `https://${baseUrl}`;
+    }
     const url = `${baseUrl}/${apiPrefix}/storage/file/${folder}/${uniqueId}${fileExtension}`;
     return { url, key: `${folder}/${uniqueId}${fileExtension}` };
   }
