@@ -62,8 +62,8 @@ export class AuthService {
     ];
 
     const payload = { sub: user.id, email: user.email };
-    const accessToken = this.jwt.sign(payload, { expiresIn: '15m' });
-    const refreshToken = this.jwt.sign(payload, { expiresIn: '7d' });
+    const accessToken = this.jwt.sign(payload, { expiresIn: '7d' });
+    const refreshToken = this.jwt.sign(payload, { expiresIn: '30d' });
 
     // Log audit
     await this.db.auditLog.create({
@@ -99,8 +99,8 @@ export class AuthService {
       if (!user) throw new UnauthorizedException();
 
       const newPayload = { sub: user.id, email: user.email };
-      const accessToken = this.jwt.sign(newPayload, { expiresIn: '15m' });
-      const newRefreshToken = this.jwt.sign(newPayload, { expiresIn: '7d' });
+      const accessToken = this.jwt.sign(newPayload, { expiresIn: '7d' });
+      const newRefreshToken = this.jwt.sign(newPayload, { expiresIn: '30d' });
 
       return { accessToken, refreshToken: newRefreshToken };
     } catch {
