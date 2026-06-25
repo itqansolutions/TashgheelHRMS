@@ -101,6 +101,23 @@ export default function CompanyDetailPage() {
   const locale = params.locale as string;
   const companyId = params.id as string;
 
+  const getDocumentUrl = (url: string) => {
+    if (!url) return '';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (apiUrl && (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1'))) {
+      try {
+        const urlObj = new URL(url);
+        const apiDomain = new URL(apiUrl);
+        urlObj.protocol = apiDomain.protocol;
+        urlObj.host = apiDomain.host;
+        return urlObj.toString();
+      } catch (e) {
+        return url.replace(/^http:\/\/(localhost|127\.0\.0\.1):\d*/, apiUrl.replace(/\/$/, ''));
+      }
+    }
+    return url;
+  };
+
   const [company, setCompany] = useState<Company | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'contacts' | 'contracts' | 'branches' | 'activities'>('overview');
@@ -828,7 +845,7 @@ export default function CompanyDetailPage() {
                         <td className="whitespace-nowrap px-6 py-4 text-right rtl:text-left">
                           <div className="flex justify-end gap-2">
                             <a
-                              href={contract.fileUrl}
+                              href={getDocumentUrl(contract.fileUrl)}
                               target="_blank"
                               rel="noopener noreferrer"
                               title={t('contracts.download')}

@@ -101,6 +101,23 @@ export default function CandidateDetailPage() {
   const locale = params.locale as string;
   const id = params.id as string;
 
+  const getDocumentUrl = (url: string) => {
+    if (!url) return '';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (apiUrl && (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1'))) {
+      try {
+        const urlObj = new URL(url);
+        const apiDomain = new URL(apiUrl);
+        urlObj.protocol = apiDomain.protocol;
+        urlObj.host = apiDomain.host;
+        return urlObj.toString();
+      } catch (e) {
+        return url.replace(/^http:\/\/(localhost|127\.0\.0\.1):\d*/, apiUrl.replace(/\/$/, ''));
+      }
+    }
+    return url;
+  };
+
   const [candidate, setCandidate] = useState<CandidateDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'skills' | 'applications'>('overview');
@@ -480,7 +497,7 @@ export default function CandidateDetailPage() {
                     <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
                       <span className="text-xs font-bold text-[#2A2C4E] truncate max-w-xs sm:max-w-md">{cvDoc.fileName}</span>
                       <a
-                        href={cvDoc.fileUrl}
+                        href={getDocumentUrl(cvDoc.fileUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-xs font-bold text-[#00B67A] hover:underline"
@@ -493,7 +510,7 @@ export default function CandidateDetailPage() {
                     {/* Render iframe preview if PDF */}
                     {cvDoc.fileUrl.toLowerCase().endsWith('.pdf') && (
                       <div className="aspect-[4/5] w-full border border-slate-200 rounded-xl overflow-hidden shadow-inner">
-                        <iframe src={cvDoc.fileUrl} className="h-full w-full" title="CV Resume Preview" />
+                        <iframe src={getDocumentUrl(cvDoc.fileUrl)} className="h-full w-full" title="CV Resume Preview" />
                       </div>
                     )}
                   </div>
@@ -703,7 +720,7 @@ export default function CandidateDetailPage() {
 
                           <div className="flex gap-2 shrink-0 ltr:ml-2 rtl:mr-2">
                             <a
-                              href={doc.fileUrl}
+                              href={getDocumentUrl(doc.fileUrl)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-[#00B67A] transition-all border border-transparent hover:border-slate-150"
