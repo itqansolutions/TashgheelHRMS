@@ -95,10 +95,97 @@ export class AiController {
     return { success: true, data: candidates };
   }
 
+  @Get('jobs/:jobId/candidates/:candidateId/report')
+  @ApiOperation({ summary: 'Get detailed AI matching explanation report for a candidate and job opening' })
+  async getMatchingReport(
+    @Param('jobId') jobId: string,
+    @Param('candidateId') candidateId: string,
+  ) {
+    try {
+      const report = await this.aiService.explainCandidateMatch(jobId, candidateId);
+      return { success: true, data: report };
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to generate AI matching report');
+    }
+  }
+
+  @Get('candidates/:candidateId/jobs')
+  @ApiOperation({ summary: 'Find recommended jobs for a candidate based on vector embeddings' })
+  async findMatchingJobs(@Param('candidateId') candidateId: string) {
+    try {
+      const jobs = await this.aiService.findMatchingJobsForCandidate(candidateId, 10);
+      return { success: true, data: jobs };
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to find recommended jobs');
+    }
+  }
+
+  @Post('jobs/:jobId/shortlist')
+  @ApiOperation({ summary: 'Generate AI shortlist of top 5 candidates' })
+  async generateShortlist(@Param('jobId') jobId: string) {
+    try {
+      const shortlist = await this.aiService.generateAiShortlist(jobId);
+      return { success: true, data: shortlist };
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to generate AI shortlist');
+    }
+  }
+
+  @Post('jobs/:jobId/compare')
+  @ApiOperation({ summary: 'Compare up to 3 candidates side-by-side for a job opening' })
+  async compare(
+    @Param('jobId') jobId: string,
+    @Body('candidateIds') candidateIds: string[],
+  ) {
+    if (!candidateIds || !Array.isArray(candidateIds) || candidateIds.length === 0) {
+      throw new BadRequestException('Candidate IDs must be provided as an array');
+    }
+    try {
+      const comparison = await this.aiService.compareCandidates(jobId, candidateIds);
+      return { success: true, data: comparison };
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to compare candidates');
+    }
+  }
+
+  @Post('jobs/:jobId/hiring-recommendation')
+  @ApiOperation({ summary: 'Generate AI hiring recommendation confidence for a candidate' })
+  async generateRecommendation(
+    @Param('jobId') jobId: string,
+    @Body('candidateId') candidateId: string,
+  ) {
+    if (!candidateId) {
+      throw new BadRequestException('candidateId is required');
+    }
+    try {
+      const recommendation = await this.aiService.generateHiringRecommendation(jobId, candidateId);
+      return { success: true, data: recommendation };
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to generate hiring recommendation');
+    }
+  }
+
   @Post('generate-questions')
   @ApiOperation({ summary: 'Generate interview questions for a candidate applying to a job opening' })
   async generateQuestions(@Body() dto: GenerateQuestionsDto) {
     const questions = await this.aiService.generateInterviewQuestions(dto);
     return { success: true, data: questions };
+  }
+
+  @Post('jobs/:jobId/assistant')
+  @ApiOperation({ summary: 'Chat with the AI Recruiter Assistant about matching candidates' })
+  async chatWithAssistant(
+    @Param('jobId') jobId: string,
+    @Body('message') message: string,
+  ) {
+    if (!message) {
+      throw new BadRequestException('Message body is required');
+    }
+    try {
+      const response = await this.aiService.askRecruiterAssistant(jobId, message);
+      return { success: true, data: response };
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to get response from AI Assistant');
+    }
   }
 }

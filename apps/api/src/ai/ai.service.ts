@@ -251,7 +251,7 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
    */
   async findMatchingCandidatesForJob(jobId: string, limit = 10) {
     const candidates = await this.db.$queryRawUnsafe<any[]>(`
-      SELECT c.id, c."firstName", c."lastName", c.email, c."aiSummary",
+      SELECT c.id, c."firstName", c."lastName", c.email, c."aiSummary", c.availability, c."expectedSalary",
              1 - (c.embedding <=> j.embedding) AS match_score
       FROM "candidates" c, "job_openings" j
       WHERE j.id = $1
@@ -338,22 +338,492 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
     const skillsText = candidate.skills.map((s: any) => s.skillName).join(', ') || 'general skills';
     return `# Suggested Interview Questions for ${candidate.firstName} ${candidate.lastName}
 ## Position: ${jobTitle}
-
+ 
 Here is a list of customized interview questions based on the candidate's skills (${skillsText}) and the requirements for the ${jobTitle} role:
-
+ 
 1. **How do you leverage your experience in similar environments to hit the ground running as a ${jobTitle}?**
    * *Evaluation Guideline*: Look for specific project details, their workflow methodologies, and how they handle fast transition times.
-
+ 
 2. **Based on your background, could you explain a challenging project you worked on that required skills in ${skillsText.split(',')[0] || 'problem solving'}?**
    * *Evaluation Guideline*: The candidate should describe the problem clearly, detail their action steps, and explain the positive outcome (STAR method).
-
+ 
 3. **Our team relies on close collaboration and standard procedures. How do you handle cases where requirements change rapidly during a sprint or project phase?**
    * *Evaluation Guideline*: Evaluate their flexibility, communications style under pressure, and adaptability.
-
+ 
 4. **Which tools or best practices do you consider essential for success as a ${jobTitle}, and how have you applied them in past roles?**
    * *Evaluation Guideline*: Listen for modern technical vocabulary, adherence to standard industry guidelines, and practical examples.
-
+ 
 5. **Why are you interested in this role at our company, and how does it align with your long-term career aspirations?**
    * *Evaluation Guideline*: Look for genuine interest in the company's product/mission and a desire to grow within the team.`;
+  }
+
+  /**
+   * Generates a detailed matching explanation report comparing a candidate with a job opening.
+   */
+  async explainCandidateMatch(jobId: string, candidateId: string) {
+    const candidate = await this.db.candidate.findUnique({
+      where: { id: candidateId },
+      include: {
+        experience: true,
+        education: true,
+        skills: true,
+      },
+    });
+
+    const jobOpening = await this.db.jobOpening.findUnique({
+      where: { id: jobId },
+      include: {
+        requisition: true,
+      },
+    });
+
+    if (!candidate || !jobOpening) {
+      throw new NotFoundException('Candidate or Job Opening not found');
+    }
+
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
+    if (this.isMockKey(apiKey)) {
+      this.logger.warn('Mock or missing GEMINI_API_KEY detected. Returning mock explanation.');
+      return this.getMockCandidateMatchExplanation(candidate, jobOpening);
+    }
+
+    try {
+      const prompt = `
+        You are an expert recruitment AI. Compare the candidate profile and the job opening requirements.
+        
+        Candidate Details:
+        - Name: ${candidate.firstName} ${candidate.lastName}
+        - Email: ${candidate.email || ''}
+        - Location: ${candidate.currentLocation || 'Not specified'}
+        - Expected Salary: ${candidate.expectedSalary || 'Not specified'} SAR
+        - Availability: ${candidate.availability || 'Not specified'}
+        - Skills: ${candidate.skills.map(s => s.skillName).join(', ')}
+        - Experience: ${candidate.experience.map(e => `${e.title} at ${e.companyName}: ${e.description || ''}`).join('; ')}
+        - Education: ${candidate.education.map(ed => `${ed.degree} in ${ed.fieldOfStudy} from ${ed.institution}`).join('; ')}
+        
+        Job Opening Details:
+        - Title: ${jobOpening.title}
+        - Department: ${jobOpening.requisition.department}
+        - Location: ${jobOpening.requisition.location}
+        - Salary Range: ${jobOpening.requisition.salaryMin || ''} - ${jobOpening.requisition.salaryMax || ''} SAR
+        - Job Type: ${jobOpening.requisition.type}
+        - Requirements: ${jobOpening.requisition.requirementsEn}
+        - Description: ${jobOpening.requisition.descriptionEn}
+
+        Analyze and return a STRICT JSON object representing a detailed compatibility report. Do not include markdown formatting or backticks in the response. The JSON must exactly match this structure:
+        {
+          "overallScore": number (0-100),
+          "rating": number (1-5 representing stars),
+          "matchCategory": "Excellent Match" | "Strong Match" | "Good Match" | "Partial Match",
+          "breakdown": {
+            "skills": number (0-100),
+            "experience": number (0-100),
+            "education": number (0-100),
+            "location": number (0-100),
+            "salary": number (0-100),
+            "industry": number (0-100),
+            "languages": number (0-100)
+          },
+          "skillsMatch": [
+            { "skill": "Skill Name", "required": "Required state/years", "candidate": "Candidate proficiency/years/Yes/No", "score": number (0-100) }
+          ],
+          "experienceMatch": { "required": "Years/titles needed", "candidate": "Years/titles candidate has", "score": number (0-100) },
+          "educationMatch": { "required": "Degrees needed", "candidate": "Candidate degree", "score": number (0-100) },
+          "industryMatch": { "required": "Domain needed", "candidate": "Candidate domains", "score": number (0-100) },
+          "locationMatch": { "required": "Location needed", "candidate": "Candidate location", "score": number (0-100) },
+          "salaryMatch": { "required": "Salary budget", "candidate": "Candidate expectation", "score": number (0-100) },
+          "languageMatch": [
+            { "language": "Language", "required": "Level", "candidate": "Level", "score": number (0-100) }
+          ],
+          "missingSkills": ["Skill 1", "Skill 2"],
+          "strengths": ["Strength 1", "Strength 2"],
+          "weaknesses": ["Weakness 1", "Weakness 2"],
+          "missingSkillsAnalysis": {
+            "criticalMissingSkills": ["Skill A"],
+            "recommendedUpskilling": ["Upskilling tip"],
+            "trainableSkills": ["Trainable A"],
+            "dealBreakers": ["Deal breaker if any"]
+          },
+          "recommendationText": "Professional Gemini narrative paragraph explaining why the candidate is a fit, key highlights, risks, and onboarding focus."
+        }
+      `;
+
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      let jsonStr = response.text || '{}';
+      jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(jsonStr);
+    } catch (error: any) {
+      this.logger.error('Failed to generate candidate matching report via Gemini', error);
+      throw new Error(`AI Matching Error: ${error.message || error}`);
+    }
+  }
+
+  /**
+   * Reverse matching to find job openings suited for a candidate based on vector embeddings.
+   */
+  async findMatchingJobsForCandidate(candidateId: string, limit = 10) {
+    const candidate = await this.db.candidate.findUnique({
+      where: { id: candidateId },
+    });
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found');
+    }
+
+    const jobs = await this.db.$queryRawUnsafe<any[]>(`
+      SELECT j.id, j.title, j.status, r.location, r.department, r."salaryMin", r."salaryMax",
+             1 - (j.embedding <=> c.embedding) AS match_score
+      FROM "job_openings" j
+      INNER JOIN "job_requisitions" r ON j."requisitionId" = r.id
+      CROSS JOIN "candidates" c
+      WHERE c.id = $1
+        AND c.embedding IS NOT NULL
+        AND j.embedding IS NOT NULL
+      ORDER BY j.embedding <=> c.embedding ASC
+      LIMIT $2;
+    `, candidateId, limit);
+
+    return jobs;
+  }
+
+  /**
+   * Selects the top 5 candidates and generates a shortlist summary.
+   */
+  async generateAiShortlist(jobId: string) {
+    const jobOpening = await this.db.jobOpening.findUnique({
+      where: { id: jobId },
+      include: { requisition: true },
+    });
+
+    if (!jobOpening) {
+      throw new NotFoundException('Job Opening not found');
+    }
+
+    const topCandidates = await this.findMatchingCandidatesForJob(jobOpening.id, 10);
+
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
+    if (this.isMockKey(apiKey)) {
+      this.logger.warn('Mock or missing GEMINI_API_KEY. Returning mock shortlist.');
+      return topCandidates.slice(0, 5).map((c: any, index: number) => ({
+        candidateId: c.id,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        email: c.email,
+        matchScore: Math.round((c.match_score || 0.85) * 100),
+        rank: index + 1,
+        shortlistReason: `Ranked #${index + 1} based on skills similarity and profile summary.`
+      }));
+    }
+
+    try {
+      const candidatesPayload = topCandidates.map((c: any) => ({
+        id: c.id,
+        name: `${c.firstName} ${c.lastName}`,
+        email: c.email,
+        aiSummary: c.aiSummary || '',
+        matchScore: Math.round((c.match_score || 0) * 100),
+      }));
+
+      const prompt = `
+        You are an expert HR AI. You need to shortlist the best 5 candidates for the following job opening:
+        
+        Job Requisition:
+        - Title: ${jobOpening.title}
+        - Department: ${jobOpening.requisition.department}
+        - Requirements: ${jobOpening.requisition.requirementsEn}
+        - Description: ${jobOpening.requisition.descriptionEn}
+
+        Top candidates retrieved from vector search:
+        ${JSON.stringify(candidatesPayload)}
+
+        Select the best 5 candidates from the list. Rank them from 1 to 5.
+        Write a concise, 1-sentence selection reasoning for each.
+        Return a STRICT JSON array of objects. Do not include markdown formatting or backticks.
+        The JSON must match this structure:
+        [
+          {
+            "candidateId": "UUID string",
+            "firstName": "First name",
+            "lastName": "Last name",
+            "email": "Email",
+            "matchScore": number (0-100),
+            "rank": number (1-5),
+            "shortlistReason": "One-sentence professional justification why this candidate was selected for the shortlist."
+          }
+        ]
+      `;
+
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      let jsonStr = response.text || '[]';
+      jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(jsonStr);
+    } catch (error: any) {
+      this.logger.error('Failed to generate AI Shortlist via Gemini', error);
+      throw new Error(`AI Shortlist Error: ${error.message || error}`);
+    }
+  }
+
+  /**
+   * Compares up to 3 candidates side-by-side for a specific job opening.
+   */
+  async compareCandidates(jobId: string, candidateIds: string[]) {
+    const jobOpening = await this.db.jobOpening.findUnique({
+      where: { id: jobId },
+      include: { requisition: true },
+    });
+
+    if (!jobOpening) {
+      throw new NotFoundException('Job Opening not found');
+    }
+
+    const candidates = await this.db.candidate.findMany({
+      where: { id: { in: candidateIds } },
+      include: {
+        experience: true,
+        education: true,
+        skills: true,
+      },
+    });
+
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
+    if (this.isMockKey(apiKey)) {
+      return {
+        comparison: candidates.map((c: any, index: number) => ({
+          candidateId: c.id,
+          name: `${c.firstName} ${c.lastName}`,
+          overallScore: 85 - index * 5,
+          strengths: ['Good foundational tech stack', 'Clear communication'],
+          weaknesses: ['Missing secondary integrations'],
+          recommendation: 'Recommended for standard onboarding path.'
+        })),
+        highlightedCandidateId: candidates[0]?.id || null,
+        bestCandidateReason: 'Candidate displays the highest matching score and alignment with core skills.'
+      };
+    }
+
+    try {
+      const candidatesData = candidates.map((c: any) => ({
+        id: c.id,
+        name: `${c.firstName} ${c.lastName}`,
+        email: c.email || '',
+        currentLocation: c.currentLocation || '',
+        expectedSalary: c.expectedSalary || '',
+        skills: c.skills.map((s: any) => s.skillName),
+        experience: c.experience.map((e: any) => `${e.title} at ${e.companyName}: ${e.description || ''}`),
+        education: c.education.map((ed: any) => `${ed.degree} from ${ed.institution}`),
+      }));
+
+      const prompt = `
+        You are an expert HR AI. Compare these candidates side-by-side for the job opening:
+        
+        Job Requisition:
+        - Title: ${jobOpening.title}
+        - Requirements: ${jobOpening.requisition.requirementsEn}
+        
+        Candidates to compare:
+        ${JSON.stringify(candidatesData)}
+
+        Generate a comparison report. Identify the best candidate and explain why.
+        Return a STRICT JSON object. Do not include markdown formatting or backticks.
+        The JSON must match this structure:
+        {
+          "comparison": [
+            {
+              "candidateId": "UUID string",
+              "name": "Candidate Name",
+              "overallScore": number (0-100),
+              "strengths": ["string"],
+              "weaknesses": ["string"],
+              "recommendation": "Brief recommendation narrative"
+            }
+          ],
+          "highlightedCandidateId": "UUID of the best candidate",
+          "bestCandidateReason": "Explain why this candidate is the best choice among the compared ones."
+        }
+      `;
+
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      let jsonStr = response.text || '{}';
+      jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(jsonStr);
+    } catch (error: any) {
+      this.logger.error('Failed to compare candidates via Gemini', error);
+      throw new Error(`AI Comparison Error: ${error.message || error}`);
+    }
+  }
+
+  /**
+   * Generates a final hiring recommendation with confidence scores.
+   */
+  async generateHiringRecommendation(jobId: string, candidateId: string) {
+    const candidate = await this.db.candidate.findUnique({
+      where: { id: candidateId },
+      include: { experience: true, education: true, skills: true },
+    });
+
+    const jobOpening = await this.db.jobOpening.findUnique({
+      where: { id: jobId },
+      include: { requisition: true },
+    });
+
+    if (!candidate || !jobOpening) {
+      throw new NotFoundException('Candidate or Job Opening not found');
+    }
+
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
+    if (this.isMockKey(apiKey)) {
+      return {
+        confidence: 'High',
+        reasons: ['Exceeds required years of experience', 'Possesses critical tech stack'],
+        risks: ['Salary is close to upper bound of budget'],
+        nextStep: 'Offer extension or final interview with team lead',
+        suggestedPanel: ['Engineering Manager', 'Senior Developer']
+      };
+    }
+
+    try {
+      const prompt = `
+        You are an expert HR AI Advisor. Generate a formal hiring recommendation for:
+        Candidate: ${candidate.firstName} ${candidate.lastName}
+        Job Opening: ${jobOpening.title}
+        
+        Requirements: ${jobOpening.requisition.requirementsEn}
+        Candidate Summary: ${candidate.aiSummary || ''}
+        Candidate Skills: ${candidate.skills.map((s: any) => s.skillName).join(', ')}
+
+        Return a STRICT JSON object. Do not include markdown formatting or backticks.
+        The JSON must match this structure:
+        {
+          "confidence": "High" | "Medium" | "Low",
+          "reasons": ["Reason 1", "Reason 2"],
+          "risks": ["Risk 1", "Risk 2"],
+          "nextStep": "Recommended next step (e.g. Extend Offer, Technical Stage)",
+          "suggestedPanel": ["Role 1", "Role 2"]
+        }
+      `;
+
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      let jsonStr = response.text || '{}';
+      jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(jsonStr);
+    } catch (error: any) {
+      this.logger.error('Failed to generate hiring recommendation via Gemini', error);
+      throw new Error(`AI Recommendation Error: ${error.message || error}`);
+    }
+  }
+
+  private getMockCandidateMatchExplanation(candidate: any, jobOpening: any) {
+    const overallScore = 88;
+    return {
+      overallScore,
+      rating: 4,
+      matchCategory: 'Strong Match',
+      breakdown: {
+        skills: 85,
+        experience: 90,
+        education: 80,
+        location: 100,
+        salary: 100,
+        industry: 80,
+        languages: 100
+      },
+      skillsMatch: [
+        { skill: 'TypeScript', required: 'Required', candidate: 'Experienced', score: 90 },
+        { skill: 'NestJS', required: 'Required', candidate: 'Intermediate', score: 80 }
+      ],
+      experienceMatch: { required: '3+ Years', candidate: '4 Years', score: 90 },
+      educationMatch: { required: 'Computer Science or equivalent', candidate: 'Bachelor Degree', score: 85 },
+      industryMatch: { required: 'Tech / HRMS', candidate: 'Software Development', score: 80 },
+      locationMatch: { required: jobOpening.requisition.location, candidate: candidate.currentLocation || 'Same Location', score: 100 },
+      salaryMatch: { required: 'Within Budget', candidate: candidate.expectedSalary ? `${candidate.expectedSalary} SAR` : 'Not specified', score: 100 },
+      languageMatch: [
+        { language: 'English', required: 'Professional', candidate: 'Excellent', score: 100 }
+      ],
+      missingSkills: ['Kubernetes'],
+      strengths: ['Strong TypeScript knowledge', 'Good team player'],
+      weaknesses: ['No container orchestration experience'],
+      missingSkillsAnalysis: {
+        criticalMissingSkills: [],
+        recommendedUpskilling: ['Learn Docker & Kubernetes'],
+        trainableSkills: ['Container deployment'],
+        dealBreakers: []
+      },
+      recommendationText: `Ahmed is a strong candidate for the ${jobOpening.title} role. They possess 4 years of experience and fit the salary range perfectly. Gaps in Kubernetes are minor and can be trained.`
+    };
+  }
+
+  /**
+   * Conversational assistant for recruitment tasks on a job opening.
+   */
+  async askRecruiterAssistant(jobId: string, message: string): Promise<string> {
+    const jobOpening = await this.db.jobOpening.findUnique({
+      where: { id: jobId },
+      include: { requisition: true },
+    });
+
+    if (!jobOpening) {
+      throw new NotFoundException('Job Opening not found');
+    }
+
+    const topCandidates = await this.findMatchingCandidatesForJob(jobOpening.id, 10);
+
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
+    if (this.isMockKey(apiKey)) {
+      return `[Mock Recruiter Assistant]: Comparing candidates for "${jobOpening.title}". You asked: "${message}". I found ${topCandidates.length} matching candidates. Ahmed is a strong fit.`;
+    }
+
+    try {
+      const candidatesSummary = topCandidates.map((c: any) => ({
+        name: `${c.firstName} ${c.lastName}`,
+        email: c.email,
+        skills: c.skills?.map((s: any) => s.skillName) || [],
+        aiSummary: c.aiSummary || '',
+        matchScore: Math.round((c.match_score || 0) * 100),
+      }));
+
+      const prompt = `
+        You are Tashgheel Recruiter Assistant, an AI HR Assistant. You are here to answer the recruiter's questions about candidate matches for the position: "${jobOpening.title}".
+        
+        Job Requisition Context:
+        - Title: ${jobOpening.title}
+        - Department: ${jobOpening.requisition.department}
+        - Location: ${jobOpening.requisition.location}
+        - Requirements: ${jobOpening.requisition.requirementsEn}
+        - Description: ${jobOpening.requisition.descriptionEn}
+
+        List of top matching candidates from database:
+        ${JSON.stringify(candidatesSummary)}
+
+        Recruiter Question:
+        "${message}"
+
+        Provide a professional, concise, and helpful response. Answer directly based on the candidate details provided above. If asked to compare or list, do so clearly. Don't use markdown code blocks or formatting.
+      `;
+
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      return response.text || '';
+    } catch (error: any) {
+      this.logger.error('Failed to run Recruiter Assistant via Gemini', error);
+      throw new Error(`AI Assistant Error: ${error.message || error}`);
+    }
   }
 }

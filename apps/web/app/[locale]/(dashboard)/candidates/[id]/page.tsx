@@ -162,7 +162,10 @@ export default function CandidateDetailPage() {
 
   const [candidate, setCandidate] = useState<CandidateDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'skills' | 'applications'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'skills' | 'applications' | 'recommended_jobs'>('overview');
+
+  const [recommendedJobs, setRecommendedJobs] = useState<any[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
 
   // Edit State
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -218,11 +221,31 @@ export default function CandidateDetailPage() {
       });
   };
 
+  const fetchRecommendedJobs = async () => {
+    setLoadingJobs(true);
+    try {
+      const res = await api.get(`/ai/candidates/${id}/jobs`);
+      if (res.data?.success) {
+        setRecommendedJobs(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recommended jobs', err);
+    } finally {
+      setLoadingJobs(false);
+    }
+  };
+
   useEffect(() => {
     if (id) {
       fetchCandidateDetails();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (activeTab === 'recommended_jobs' && recommendedJobs.length === 0) {
+      fetchRecommendedJobs();
+    }
+  }, [activeTab]);
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -510,6 +533,19 @@ export default function CandidateDetailPage() {
               }`}
             >
               {locale === 'ar' ? 'طلبات التقديم' : 'Applications'}
+            </button>
+            <button
+              onClick={() => setActiveTab('recommended_jobs')}
+              className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${
+                activeTab === 'recommended_jobs'
+                  ? 'border-[#00B67A] text-[#2A2C4E]'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 text-indigo-500" />
+                <span>{locale === 'ar' ? 'الوظائف المقترحة' : 'Recommended Jobs'}</span>
+              </span>
             </button>
           </div>
 
@@ -833,6 +869,96 @@ export default function CandidateDetailPage() {
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB CONTENT: Recommended Jobs */}
+          {activeTab === 'recommended_jobs' && (
+            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h4 className="text-sm font-bold text-[#2A2C4E]">
+                  {locale === 'ar' ? 'الوظائف المقترحة بالذكاء الاصطناعي' : 'AI Recommended Jobs'}
+                </h4>
+                <span className="text-xs text-slate-400 font-medium">Sorted by semantic compatibility score</span>
+              </div>
+
+              {loadingJobs ? (
+                <div className="flex flex-col items-center justify-center py-12 text-indigo-500">
+                  <Loader2 className="h-6 w-6 animate-spin mb-2" />
+                  <p className="text-xs font-semibold">Running matching algorithms...</p>
+                </div>
+              ) : recommendedJobs.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-6">
+                  {locale === 'ar' ? 'لا يوجد وظائف مقترحة لهذا المترشح حالياً.' : 'No recommended jobs matching this candidate profile found.'}
+                </p>
+              ) : (
+                <div className="overflow-x-auto text-xs">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100 font-bold uppercase text-slate-400">
+                        <th className="py-2.5 px-4 rtl:text-right">{t('jobs.jobTitle')}</th>
+                        <th className="py-2.5 px-4 rtl:text-right">{locale === 'ar' ? 'القسم' : 'Department'}</th>
+                        <th className="py-2.5 px-4 rtl:text-right">{locale === 'ar' ? 'الموقع' : 'Location'}</th>
+                        <th className="py-2.5 px-4 rtl:text-right">{locale === 'ar' ? 'الميزانية' : 'Salary Budget'}</th>
+                        <th className="py-2.5 px-4 rtl:text-right">{locale === 'ar' ? 'نسبة التطابق' : 'Match Score'}</th>
+                        <th className="py-2.5 px-4 text-right rtl:text-left"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {recommendedJobs.map((job: any) => {
+                        const score = Math.round((job.match_score || 0) * 100);
+                        const salaryText = job.salaryMin || job.salaryMax 
+                          ? `${job.salaryMin ? Number(job.salaryMin).toLocaleString() : ''} - ${job.salaryMax ? Number(job.salaryMax).toLocaleString() : ''} SAR` 
+                          : 'Not specified';
+
+                        const handleQuickApply = async () => {
+                          try {
+                            await api.post('/applications', {
+                              candidateId: id,
+                              jobOpeningId: job.id,
+                              stage: 'SCREENING'
+                            });
+                            alert(locale === 'ar' ? 'تم التقديم على الوظيفة بنجاح!' : 'Successfully applied to job opening!');
+                            fetchRecommendedJobs();
+                          } catch (e: any) {
+                            alert(e.response?.data?.message || 'Failed to apply candidate');
+                          }
+                        };
+
+                        return (
+                          <tr key={job.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3 px-4 font-bold text-[#1A1C29] rtl:text-right">
+                              <button
+                                onClick={() => router.push(`/${locale}/jobs/${job.id}?type=opening`)}
+                                className="text-[#2A2C4E] hover:text-[#00B67A] transition-colors hover:underline text-left font-bold"
+                              >
+                                {job.title}
+                              </button>
+                            </td>
+                            <td className="py-3 px-4 text-slate-500 rtl:text-right">{job.department}</td>
+                            <td className="py-3 px-4 text-slate-500 rtl:text-right">{job.location}</td>
+                            <td className="py-3 px-4 text-slate-500 rtl:text-right">{salaryText}</td>
+                            <td className="py-3 px-4 rtl:text-right font-bold text-indigo-600">
+                              <div className="flex items-center gap-1">
+                                <Sparkles className="h-3 w-3 text-indigo-500" />
+                                <span>{score}%</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-right rtl:text-left">
+                              <button
+                                onClick={handleQuickApply}
+                                className="bg-[#00B67A] text-white hover:bg-emerald-600 px-3 py-1 rounded-lg font-bold transition-all active:scale-[0.98]"
+                              >
+                                {locale === 'ar' ? 'تقديم سريع' : 'Quick Apply'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

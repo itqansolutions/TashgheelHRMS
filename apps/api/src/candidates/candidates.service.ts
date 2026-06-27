@@ -738,10 +738,31 @@ export class CandidatesService {
       this.logger.error(`Failed to upload CV document for candidate ${candidate.id}`, uploadError);
     }
 
-    // Sync candidate embedding based on AI summary and skills to support vector matching
+    // Sync candidate embedding based on full detailed history to support highly accurate vector matching
     try {
-      const skillsArray = Array.isArray(parsedData.skills) ? parsedData.skills : [];
-      const textToEmbed = `${candidate.firstName} ${candidate.lastName}. ${candidate.aiSummary || ''}. Skills: ${skillsArray.join(', ')}`;
+      const skillsArray = Array.isArray(candidate.skills) ? candidate.skills.map((s: any) => s.skillName) : [];
+      const expArray = Array.isArray(candidate.experience) ? candidate.experience.map((e: any) => {
+        const dateStr = e.isCurrent ? 'Present' : e.endDate ? new Date(e.endDate).getFullYear() : '';
+        return `${e.title} at ${e.companyName} (${dateStr}): ${e.description || ''}`;
+      }) : [];
+      const eduArray = Array.isArray(candidate.education) ? candidate.education.map((e: any) => 
+        `${e.degree} in ${e.fieldOfStudy || ''} from ${e.institution}`
+      ) : [];
+
+      const textParts = [
+        `Candidate: ${candidate.firstName} ${candidate.lastName}`,
+        `Summary: ${candidate.aiSummary || ''}`,
+        `Skills: ${skillsArray.join(', ')}`
+      ];
+
+      if (expArray.length > 0) {
+        textParts.push(`Experience: ${expArray.join('. ')}`);
+      }
+      if (eduArray.length > 0) {
+        textParts.push(`Education: ${eduArray.join('. ')}`);
+      }
+
+      const textToEmbed = textParts.join('\n');
       await this.aiService.syncCandidateEmbedding(candidate.id, textToEmbed);
     } catch (embedError) {
       this.logger.error(`Failed to sync candidate embedding for candidate ${candidate.id}`, embedError);
