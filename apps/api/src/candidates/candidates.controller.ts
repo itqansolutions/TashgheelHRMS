@@ -207,4 +207,15 @@ export class CandidatesController {
     const result = await this.candidatesService.parseAndCreateFromCv(file, actor.id);
     return { success: true, ...result };
   }
+
+  @Post(':id/reparse')
+  @Permissions('candidates:write')
+  @ApiOperation({ summary: 'Reparse existing uploaded candidate CV and update profiles/timelines' })
+  async reparseCv(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const data = await this.candidatesService.reparseCandidateCv(id, actor.id);
+    return { success: true, data };
+  }
 }

@@ -591,6 +591,10 @@ export class CandidatesService {
     const firstName = cleanString(parsedData?.firstName) || 'Candidate';
     const lastName = cleanString(parsedData?.lastName) || 'Profile';
     const aiSummary = cleanString(parsedData?.aiSummary) || '';
+    const linkedinUrl = cleanString(parsedData?.linkedinUrl);
+    const currentLocation = cleanString(parsedData?.currentLocation);
+    const expectedSalary = parsedData?.expectedSalary ? Number(parsedData.expectedSalary) : undefined;
+    const nationality = cleanString(parsedData?.nationality);
 
     // Check for duplicates in the DB (only active candidates, where deletedAt is null)
     let existingCandidate = null;
@@ -625,6 +629,10 @@ export class CandidatesService {
             email: email,
             phone: phone,
             aiSummary: aiSummary,
+            linkedinUrl: linkedinUrl,
+            currentLocation: currentLocation,
+            expectedSalary: expectedSalary,
+            nationality: nationality,
             availability: 'AVAILABLE',
             skills: Array.isArray(parsedData?.skills) && parsedData.skills.length > 0
               ? {
@@ -773,5 +781,209 @@ export class CandidatesService {
       duplicated: false,
       candidate,
     };
+  }
+
+  async reparseCandidateCv(candidateId: string, actorId: string) {
+    const candidate = await this.db.candidate.findUnique({
+      where: { id: candidateId },
+      include: { documents: true },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found');
+    }
+
+    const cvDoc = candidate.documents.find((d) => d.type === 'CV');
+    if (!cvDoc) {
+      throw new BadRequestException('No CV resume file uploaded for this candidate');
+    }
+
+    let fileKey: string | null = null;
+    const urlParts = cvDoc.fileUrl.split('/storage/file/');
+    if (urlParts.length > 1) {
+      fileKey = urlParts[1];
+    } else {
+      const r2Parts = cvDoc.fileUrl.split('.com/');
+      if (r2Parts.length > 1) {
+        fileKey = r2Parts[1].substring(r2Parts[1].indexOf('/') + 1);
+      }
+    }
+
+    if (!fileKey) {
+      throw new BadRequestException('Could not resolve file key from document URL');
+    }
+
+    const fileStreamResult = await this.storageService.getFileStream(fileKey);
+    if (!fileStreamResult) {
+      throw new BadRequestException('Failed to retrieve the CV file from storage');
+    }
+
+    // Helper to read stream into buffer
+    const streamToBuffer = async (stream: any): Promise<Buffer> => {
+      return new Promise((resolve, reject) => {
+        const chunks: any[] = [];
+        stream.on('data', (chunk: any) => chunks.push(chunk));
+        stream.on('error', (err: any) => reject(err));
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+    };
+
+    let buffer: Buffer;
+    try {
+      buffer = await streamToBuffer(fileStreamResult.stream);
+    } catch (err) {
+      throw new BadRequestException('Failed to load file contents from stream');
+    }
+
+    const { PDFParse } = require('pdf-parse');
+    let text = '';
+    const isPdf = cvDoc.fileName?.toLowerCase().endsWith('.pdf') || cvDoc.fileUrl?.toLowerCase().endsWith('.pdf');
+
+    if (isPdf) {
+      try {
+        const parser = new PDFParse({ data: buffer });
+        const pdfData = await parser.getText();
+        text = (pdfData.text || '').substring(0, 10000);
+      } catch (err) {
+        throw new BadRequestException('Failed to extract text from PDF file');
+      }
+    } else {
+      text = buffer.toString('utf-8').substring(0, 5000);
+    }
+
+    if (!text || text.trim().length < 50) {
+      throw new BadRequestException('The CV document does not contain enough readable text to parse');
+    }
+
+    let parsedData;
+    try {
+      parsedData = await this.aiService.parseResumeText(text);
+    } catch (error: any) {
+      throw new BadRequestException(`AI Resume Parser failed: ${error.message || error}`);
+    }
+
+    const cleanString = (val: any): string | undefined => {
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      }
+      return undefined;
+    };
+
+    const parseDateSafe = (dateStr: any): Date => {
+      if (!dateStr) return new Date();
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? new Date() : d;
+    };
+
+    const parseEndDateSafe = (dateStr: any, isCurrent?: boolean): Date | null => {
+      if (isCurrent) return null;
+      if (!dateStr) return null;
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
+    const email = cleanString(parsedData?.email) || candidate.email;
+    const phone = cleanString(parsedData?.phone) || candidate.phone;
+    const firstName = cleanString(parsedData?.firstName) || candidate.firstName;
+    const lastName = cleanString(parsedData?.lastName) || candidate.lastName;
+    const aiSummary = cleanString(parsedData?.aiSummary) || '';
+    const linkedinUrl = cleanString(parsedData?.linkedinUrl) || candidate.linkedinUrl;
+    const currentLocation = cleanString(parsedData?.currentLocation) || candidate.currentLocation;
+    const expectedSalary = parsedData?.expectedSalary ? Number(parsedData.expectedSalary) : (candidate.expectedSalary ? Number(candidate.expectedSalary) : undefined);
+    const nationality = cleanString(parsedData?.nationality) || candidate.nationality;
+
+    const updatedCandidate = await this.db.$transaction(async (tx) => {
+      // Clean old entries
+      await tx.candidateExperience.deleteMany({ where: { candidateId } });
+      await tx.candidateEducation.deleteMany({ where: { candidateId } });
+      await tx.candidateSkill.deleteMany({ where: { candidateId } });
+
+      return await tx.candidate.update({
+        where: { id: candidateId },
+        data: {
+          firstName,
+          lastName,
+          email,
+          phone,
+          aiSummary,
+          linkedinUrl,
+          currentLocation,
+          expectedSalary,
+          nationality,
+          skills: Array.isArray(parsedData?.skills) && parsedData.skills.length > 0
+            ? {
+                createMany: {
+                  data: parsedData.skills
+                    .filter((s: any) => typeof s === 'string' && s.trim().length > 0)
+                    .map((skillName: string) => ({
+                      skillName: skillName.trim(),
+                      proficiency: 'INTERMEDIATE',
+                    })),
+                },
+              }
+            : undefined,
+          experience: Array.isArray(parsedData?.experience) && parsedData.experience.length > 0
+            ? {
+                createMany: {
+                  data: parsedData.experience.map((exp: any) => ({
+                    companyName: cleanString(exp.companyName) || 'Company',
+                    title: cleanString(exp.title) || 'Role',
+                    startDate: parseDateSafe(exp.startDate),
+                    endDate: parseEndDateSafe(exp.endDate, exp.isCurrent),
+                    isCurrent: !!exp.isCurrent,
+                    description: cleanString(exp.description) || '',
+                  })),
+                },
+              }
+            : undefined,
+          education: Array.isArray(parsedData?.education) && parsedData.education.length > 0
+            ? {
+                createMany: {
+                  data: parsedData.education.map((edu: any) => ({
+                    institution: cleanString(edu.institution) || 'Institution',
+                    degree: cleanString(edu.degree) || 'Degree',
+                    fieldOfStudy: cleanString(edu.fieldOfStudy) || '',
+                    startDate: parseDateSafe(edu.startDate),
+                    endDate: parseEndDateSafe(edu.endDate),
+                  })),
+                },
+              }
+            : undefined,
+        },
+        include: {
+          skills: true,
+          experience: true,
+          education: true,
+        },
+      });
+    });
+
+    // Sync candidate embedding
+    try {
+      const skillsArray = Array.isArray(updatedCandidate.skills) ? updatedCandidate.skills.map((s: any) => s.skillName) : [];
+      const expArray = Array.isArray(updatedCandidate.experience) ? updatedCandidate.experience.map((e: any) => {
+        const dateStr = e.isCurrent ? 'Present' : e.endDate ? new Date(e.endDate).getFullYear() : '';
+        return `${e.title} at ${e.companyName} (${dateStr}): ${e.description || ''}`;
+      }) : [];
+      const eduArray = Array.isArray(updatedCandidate.education) ? updatedCandidate.education.map((e: any) => 
+        `${e.degree} in ${e.fieldOfStudy || ''} from ${e.institution}`
+      ) : [];
+
+      const textParts = [
+        `Candidate: ${updatedCandidate.firstName} ${updatedCandidate.lastName}`,
+        `Summary: ${updatedCandidate.aiSummary || ''}`,
+        `Skills: ${skillsArray.join(', ')}`
+      ];
+
+      if (expArray.length > 0) textParts.push(`Experience: ${expArray.join('. ')}`);
+      if (eduArray.length > 0) textParts.push(`Education: ${eduArray.join('. ')}`);
+
+      await this.aiService.syncCandidateEmbedding(updatedCandidate.id, textParts.join('\n'));
+    } catch (embedError) {
+      this.logger.error(`Failed to sync embedding for candidate ${updatedCandidate.id} on reparse`, embedError);
+    }
+
+    return updatedCandidate;
   }
 }
