@@ -247,7 +247,6 @@ export default function JobsPage() {
       setIsSaving(false);
     }
   };
-
   const handleGenerateJD = async () => {
     if (!formData.title) {
       setErrorMsg(locale === 'ar' ? 'يرجى إدخال المسمى الوظيفي أولاً' : 'Please enter a Job Title first');
@@ -259,12 +258,16 @@ export default function JobsPage() {
       const res = await api.post('/ai/generate-jd', {
         title: formData.title,
         department: formData.department,
-        keywords: formData.requirementsEn,
+        keywords: formData.requirementsEn || formData.descriptionEn,
       });
       if (res.data?.success) {
+        const data = res.data.data;
         setFormData(prev => ({
           ...prev,
-          descriptionEn: res.data.data,
+          descriptionEn: data.descriptionEn || prev.descriptionEn,
+          requirementsEn: data.requirementsEn || prev.requirementsEn,
+          descriptionAr: data.descriptionAr || prev.descriptionAr,
+          requirementsAr: data.requirementsAr || prev.requirementsAr,
         }));
       }
     } catch (err: any) {
@@ -273,7 +276,6 @@ export default function JobsPage() {
       setIsGeneratingJD(false);
     }
   };
-
   const handleApprove = async (id: string) => {
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -927,9 +929,20 @@ export default function JobsPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Requirements (English) <span className="text-[#E54B4B]">*</span>
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Requirements (English) <span className="text-[#E54B4B]">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        disabled={isGeneratingJD}
+                        onClick={handleGenerateJD}
+                        className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                      >
+                        {isGeneratingJD ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                        {locale === 'ar' ? 'توليد بالذكاء الاصطناعي' : 'AI Generate'}
+                      </button>
+                    </div>
                     <textarea
                       required
                       rows={3}
@@ -943,9 +956,20 @@ export default function JobsPage() {
                 {/* Arabic Descriptions */}
                 <div className="space-y-3 pt-2">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      الوصف الوظيفي (العربية)
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        الوصف الوظيفي (العربية)
+                      </label>
+                      <button
+                        type="button"
+                        disabled={isGeneratingJD}
+                        onClick={handleGenerateJD}
+                        className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                      >
+                        {isGeneratingJD ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                        {locale === 'ar' ? 'توليد بالذكاء الاصطناعي' : 'AI Generate'}
+                      </button>
+                    </div>
                     <textarea
                       rows={3}
                       value={formData.descriptionAr}
@@ -955,9 +979,20 @@ export default function JobsPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      الشروط والمؤهلات (العربية)
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        الشروط والمؤهلات (العربية)
+                      </label>
+                      <button
+                        type="button"
+                        disabled={isGeneratingJD}
+                        onClick={handleGenerateJD}
+                        className="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                      >
+                        {isGeneratingJD ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                        {locale === 'ar' ? 'توليد بالذكاء الاصطناعي' : 'AI Generate'}
+                      </button>
+                    </div>
                     <textarea
                       rows={3}
                       value={formData.requirementsAr}

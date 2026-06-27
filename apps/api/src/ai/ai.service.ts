@@ -140,24 +140,34 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
   /**
    * Generates a comprehensive Job Description.
    */
-  async generateJobDescription(dto: GenerateJdDto): Promise<string> {
+  async generateJobDescription(dto: GenerateJdDto): Promise<{
+    descriptionEn: string;
+    requirementsEn: string;
+    descriptionAr: string;
+    requirementsAr: string;
+  }> {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
     if (this.isMockKey(apiKey)) {
       this.logger.warn('Mock or missing GEMINI_API_KEY detected. Returning fallback JD.');
-      return this.getMockJobDescription(dto);
+      return {
+        descriptionEn: this.getMockJobDescription(dto),
+        requirementsEn: `- Strong experience as a ${dto.title}.\n- Degree in related field.\n- Excellent communication skills.`,
+        descriptionAr: `نحن نبحث عن ${dto.title} موهوب للانضمام إلى فريقنا في قسم ${dto.department || 'العمليات'}.`,
+        requirementsAr: `- خبرة قوية في مجال ${dto.title}.\n- شهادة جامعية في التخصص.\n- مهارات تواصل ممتازة.`
+      };
     }
     try {
       const prompt = `
-        You are an expert HR Recruiter. Write a professional Job Description for the following role:
+        You are an expert HR Recruiter. Generate a professional job specification in both English and Arabic for the following role:
         Title: ${dto.title}
         Department: ${dto.department || 'Not specified'}
         Additional Keywords/Requirements: ${dto.keywords || 'None'}
 
-        Format the response in clean Markdown. Include the following sections:
-        - Job Summary
-        - Key Responsibilities
-        - Required Qualifications
-        - Preferred Qualifications
+        You MUST respond with a clean, raw JSON object (with no markdown block quotes or backticks) containing exactly these keys:
+        - "descriptionEn": A comprehensive, professional job summary and description in English (around 2-3 paragraphs).
+        - "requirementsEn": A bulleted list of qualifications, technical skills, and experience requirements in English.
+        - "descriptionAr": A comprehensive, professional job summary and description in Arabic (الوصف الوظيفي باللغة العربية) (around 2-3 paragraphs).
+        - "requirementsAr": A bulleted list of qualifications, technical skills, and experience requirements in Arabic (الشروط والمؤهلات باللغة العربية).
       `;
 
       const response = await this.ai.models.generateContent({
@@ -165,7 +175,15 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
         contents: prompt,
       });
 
-      return response.text || '';
+      let jsonStr = response.text || '{}';
+      jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(jsonStr);
+      return {
+        descriptionEn: parsed.descriptionEn || '',
+        requirementsEn: parsed.requirementsEn || '',
+        descriptionAr: parsed.descriptionAr || '',
+        requirementsAr: parsed.requirementsAr || '',
+      };
     } catch (error: any) {
       this.logger.error('Failed to generate JD via Gemini', error);
       throw new Error(`AI Provider Error: ${error?.message || error}`);
