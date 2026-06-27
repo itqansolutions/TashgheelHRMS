@@ -167,6 +167,14 @@ export default function CandidateDetailPage() {
   const [recommendedJobs, setRecommendedJobs] = useState<any[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
 
+  const [cvScore, setCvScore] = useState<{
+    score: number;
+    missingInfo: string[];
+    weaknesses: string[];
+    recommendations: string[];
+  } | null>(null);
+  const [loadingCvScore, setLoadingCvScore] = useState(false);
+
   // Edit State
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -235,9 +243,24 @@ export default function CandidateDetailPage() {
     }
   };
 
+  const fetchCvScore = async () => {
+    setLoadingCvScore(true);
+    try {
+      const res = await api.get(`/ai/candidates/${id}/cv-score`);
+      if (res.data?.success) {
+        setCvScore(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch CV score', err);
+    } finally {
+      setLoadingCvScore(false);
+    }
+  };
+
   useEffect(() => {
     if (id) {
       fetchCandidateDetails();
+      fetchCvScore();
     }
   }, [id]);
 
@@ -487,6 +510,89 @@ export default function CandidateDetailPage() {
                 </span>
               </div>
             </div>
+          </div>
+
+          {/* AI CV Quality Score Widget */}
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold text-[#2A2C4E] uppercase tracking-wider">
+                {locale === 'ar' ? 'جودة السيرة الذاتية (AI)' : 'AI Resume Score'}
+              </h3>
+              <Sparkles className="h-4 w-4 text-indigo-500" />
+            </div>
+
+            {loadingCvScore ? (
+              <div className="flex flex-col items-center justify-center py-6 text-slate-400">
+                <Loader2 className="h-5 w-5 animate-spin mb-1.5 text-indigo-500" />
+                <span className="text-[10px]">{locale === 'ar' ? 'جاري التحليل...' : 'Analyzing CV quality...'}</span>
+              </div>
+            ) : cvScore ? (
+              <div className="space-y-4 text-xs">
+                <div className="flex flex-col items-center justify-center py-2">
+                  <div className="relative flex items-center justify-center h-20 w-20 rounded-full border-4 border-slate-100 bg-slate-50/50">
+                    <span className="text-xl font-extrabold text-[#2A2C4E]">{cvScore.score}</span>
+                    <span className="text-[9px] text-slate-400 absolute bottom-1.5">/100</span>
+                  </div>
+                  <span className={`text-xs font-bold mt-2 ${
+                    cvScore.score >= 80 ? 'text-emerald-500' : cvScore.score >= 60 ? 'text-amber-500' : 'text-rose-500'
+                  }`}>
+                    {cvScore.score >= 80 
+                      ? (locale === 'ar' ? 'سيرة ممتازة' : 'Excellent Resume') 
+                      : cvScore.score >= 60 
+                        ? (locale === 'ar' ? 'سيرة جيدة' : 'Good Resume') 
+                        : (locale === 'ar' ? 'تحتاج تحسين' : 'Needs Improvement')}
+                  </span>
+                </div>
+
+                {cvScore.missingInfo && cvScore.missingInfo.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {locale === 'ar' ? 'بيانات مفقودة' : 'Missing Info'}
+                    </span>
+                    <ul className="text-[11px] text-rose-500 list-disc list-inside space-y-0.5 font-medium">
+                      {cvScore.missingInfo.map((info, idx) => (
+                        <li key={idx} className="truncate">{info}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {cvScore.weaknesses && cvScore.weaknesses.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {locale === 'ar' ? 'نقاط الضعف' : 'Weaknesses'}
+                    </span>
+                    <ul className="text-[11px] text-amber-600 list-disc list-inside space-y-0.5 font-medium">
+                      {cvScore.weaknesses.map((w, idx) => (
+                        <li key={idx} className="truncate">{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {cvScore.recommendations && cvScore.recommendations.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {locale === 'ar' ? 'توصيات التحسين' : 'Recommendations'}
+                    </span>
+                    <ul className="text-[11px] text-slate-600 list-disc list-inside space-y-1">
+                      {cvScore.recommendations.map((rec, idx) => (
+                        <li key={idx} className="leading-snug">{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <button
+                  onClick={fetchCvScore}
+                  className="w-full rounded-xl bg-indigo-50 border border-indigo-100 px-4 py-2.5 text-xs font-bold text-indigo-600 hover:bg-indigo-100 transition-all active:scale-[0.98]"
+                >
+                  {locale === 'ar' ? 'تحليل جودة السيرة' : 'Analyze Resume'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

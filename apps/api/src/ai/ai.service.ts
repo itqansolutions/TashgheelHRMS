@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { DatabaseService } from '../database/database.service';
 import { GenerateJdDto, GenerateQuestionsDto } from './dto/ai.dto';
 import { ConfigService } from '@nestjs/config';
+import PDFDocument from 'pdfkit';
 
 @Injectable()
 export class AiService {
@@ -17,9 +18,6 @@ export class AiService {
     this.ai = new GoogleGenAI({ apiKey });
   }
 
-  /**
-   * Helper to check if the Gemini API Key is a mock or placeholder value.
-   */
   private isMockKey(apiKey: string): boolean {
     return !apiKey || 
            apiKey === 'mock-key' || 
@@ -844,4 +842,250 @@ Here is a list of customized interview questions based on the candidate's skills
       throw new Error(`AI Assistant Error: ${error.message || error}`);
     }
   }
+
+  async getCvQualityScore(candidateId: string) {
+    const candidate = await this.db.candidate.findUnique({
+      where: { id: candidateId },
+      include: {
+        experience: true,
+        education: true,
+        skills: true,
+      },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found');
+    }
+
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
+    if (this.isMockKey(apiKey)) {
+      this.logger.warn('Mock or missing GEMINI_API_KEY detected. Returning fallback CV score.');
+      return {
+        score: 78,
+        missingInfo: ['LinkedIn profile URL', 'Professional certifications'],
+        weaknesses: ['Lack of quantitative business impacts in the employment history descriptions'],
+        recommendations: [
+          'Add metrics and KPIs to the software engineer experience section to describe business value.',
+          'Add a valid LinkedIn profile link to improve online professional presence.',
+          'Refine technical skills list to group by category.'
+        ]
+      };
+    }
+
+    try {
+      const skillsStr = candidate.skills.map(s => s.skillName).join(', ');
+      const expStr = candidate.experience.map(e => `${e.title} at ${e.companyName} (${e.startDate} to ${e.endDate || 'Present'}): ${e.description || ''}`).join('\n');
+      const eduStr = candidate.education.map(ed => `${ed.degree} in ${ed.fieldOfStudy || 'General'} from ${ed.institution}`).join('\n');
+
+      const prompt = `
+        You are an expert resume reviewer and recruitment consultant. Evaluate the quality of the following candidate's CV profile:
+        
+        Candidate Profile details:
+        - Name: ${candidate.firstName} ${candidate.lastName}
+        - Email: ${candidate.email || 'Missing'}
+        - Phone: ${candidate.phone || 'Missing'}
+        - LinkedIn URL: ${candidate.linkedinUrl || 'Missing'}
+        - Location: ${candidate.currentLocation || 'Missing'}
+        - Expected Salary: ${candidate.expectedSalary || 'Missing'}
+        - Summary: ${candidate.aiSummary || 'Missing'}
+        - Technical/Soft Skills: ${skillsStr || 'None'}
+        - Career Experience:
+        ${expStr || 'None'}
+        - Education:
+        ${eduStr || 'None'}
+
+        Grade the CV quality out of 100 based on standard recruitment principles:
+        1. Contact Information: Are name, email, phone, and LinkedIn present?
+        2. Professional Summary: Is there a solid summary, or is it missing/weak?
+        3. Experience Descriptions: Are responsibilities clearly documented? Are measurable achievements, metrics, or KPIs included?
+        4. Career Path: Is education and experience complete and well-structured?
+
+        Return a clean JSON object (STRICTLY with no markdown block formatting, code fences or backticks) containing:
+        - "score": A number out of 100.
+        - "missingInfo": An array of missing items (e.g. contact details, certifications).
+        - "weaknesses": An array of weaknesses identified in the CV content/text.
+        - "recommendations": An array of specific, actionable advice/steps the candidate should take to improve their CV.
+      `;
+
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      let jsonStr = response.text || '{}';
+      jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(jsonStr);
+    } catch (error: any) {
+      this.logger.error('Failed to calculate CV quality score via Gemini', error);
+      throw new Error(`AI Provider Error: ${error?.message || error}`);
+    }
+  }
+
+  async generateClientSubmissionPack(jobId: string, candidateIds: string[]): Promise<Buffer> {
+    const jobOpening = await this.db.jobOpening.findUnique({
+      where: { id: jobId },
+      include: { requisition: true, company: true },
+    });
+
+    if (!jobOpening) {
+      throw new NotFoundException('Job opening not found');
+    }
+
+    const candidates = await this.db.candidate.findMany({
+      where: { id: { in: candidateIds } },
+      include: { skills: true, experience: true, education: true },
+    });
+
+    const candidatesWithReports = await Promise.all(
+      candidates.map(async (c) => {
+        let matchScore = 80;
+        let summary = c.aiSummary || 'No summary available.';
+        let strengths: string[] = ['Strong background'];
+        let reasons: string[] = ['Good matches with qualifications'];
+
+        try {
+          const report = await this.explainCandidateMatch(jobId, c.id);
+          if (report) {
+            matchScore = report.overallScore || matchScore;
+            summary = report.recommendationText || summary;
+            strengths = report.strengths || strengths;
+            reasons = report.reasons || reasons;
+          }
+        } catch (err) {
+          // ignore
+        }
+
+        return {
+          ...c,
+          matchScore,
+          summary,
+          strengths,
+          reasons,
+        };
+      })
+    );
+
+    candidatesWithReports.sort((a, b) => b.matchScore - a.matchScore);
+
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({ margin: 40, size: 'A4' });
+        const buffers: Buffer[] = [];
+
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => {
+          resolve(Buffer.concat(buffers));
+        });
+
+        // 1. Cover Page
+        doc.rect(0, 0, doc.page.width, doc.page.height).fill('#2A2C4E');
+        doc.fillColor('#FFFFFF');
+        doc.fontSize(28).font('Helvetica-Bold').text('TASHGHEEL HRMS', 40, 150);
+        doc.fontSize(16).font('Helvetica').text('Enterprise AI Submission Pack', 40, 190);
+        doc.rect(40, 220, 200, 4).fill('#00B67A');
+
+        doc.fillColor('#FFFFFF');
+        doc.fontSize(14).font('Helvetica-Bold').text(`Job Title:`, 40, 320);
+        doc.fontSize(14).font('Helvetica').text(`${jobOpening.title}`, 160, 320);
+
+        doc.fontSize(14).font('Helvetica-Bold').text(`Client:`, 40, 350);
+        doc.fontSize(14).font('Helvetica').text(`${jobOpening.company?.name || 'Internal Requisition'}`, 160, 350);
+
+        doc.fontSize(14).font('Helvetica-Bold').text(`Department:`, 40, 380);
+        doc.fontSize(14).font('Helvetica').text(`${jobOpening.requisition?.department || 'Not specified'}`, 160, 380);
+
+        doc.fontSize(12).text(`Generated Date: ${new Date().toLocaleDateString()}`, 40, 500);
+        doc.fontSize(12).text('Confidential Client Report', 40, 520);
+
+        // 2. Job Specification Page
+        doc.addPage();
+        doc.fillColor('#2A2C4E').fontSize(20).font('Helvetica-Bold').text('Job Requisition Specifications', 40, 40);
+        doc.rect(40, 65, doc.page.width - 80, 2).fill('#EBF0FA');
+        
+        doc.fillColor('#2A2C4E');
+        doc.fontSize(12).font('Helvetica-Bold').text('Job Title:', 40, 90);
+        doc.fillColor('#475569').font('Helvetica').text(jobOpening.title, 150, 90);
+
+        doc.fillColor('#2A2C4E').font('Helvetica-Bold').text('Salary Range:', 40, 115);
+        const salaryRange = `${jobOpening.requisition?.salaryMin ? Number(jobOpening.requisition.salaryMin).toLocaleString() : 'N/A'} - ${jobOpening.requisition?.salaryMax ? Number(jobOpening.requisition.salaryMax).toLocaleString() : 'N/A'} SAR`;
+        doc.fillColor('#475569').font('Helvetica').text(salaryRange, 150, 115);
+
+        doc.fillColor('#2A2C4E').font('Helvetica-Bold').text('Location:', 40, 140);
+        doc.fillColor('#475569').font('Helvetica').text(jobOpening.requisition?.location || 'N/A', 150, 140);
+
+        doc.fillColor('#2A2C4E').font('Helvetica-Bold').text('Description Overview (English):', 40, 175);
+        doc.fillColor('#475569').font('Helvetica').fontSize(10).text(jobOpening.requisition?.descriptionEn || 'No details specified.', 40, 195, { width: doc.page.width - 80, align: 'justify' });
+
+        doc.fillColor('#2A2C4E').font('Helvetica-Bold').fontSize(12).text('Key Requirements:', 40, 320);
+        doc.fillColor('#475569').font('Helvetica').fontSize(10).text(jobOpening.requisition?.requirementsEn || 'No specific requirements listed.', 40, 340, { width: doc.page.width - 80 });
+
+        // 3. Candidates Overview Table Page
+        doc.addPage();
+        doc.fillColor('#2A2C4E').fontSize(20).font('Helvetica-Bold').text('Top Matching Candidates', 40, 40);
+        doc.rect(40, 65, doc.page.width - 80, 2).fill('#EBF0FA');
+
+        let y = 100;
+        doc.rect(40, y, doc.page.width - 80, 25).fill('#2A2C4E');
+        doc.fillColor('#FFFFFF').fontSize(10).font('Helvetica-Bold');
+        doc.text('Name', 50, y + 8);
+        doc.text('Match Score', 200, y + 8);
+        doc.text('Current Position', 300, y + 8);
+        doc.text('Email', 450, y + 8);
+
+        y += 25;
+        doc.fillColor('#475569').font('Helvetica');
+        candidatesWithReports.forEach((c) => {
+          doc.rect(40, y, doc.page.width - 80, 30).fill(y % 20 === 0 ? '#FFFFFF' : '#F8FAFC');
+          doc.fillColor('#1A1C29').font('Helvetica-Bold').text(`${c.firstName} ${c.lastName}`, 50, y + 10);
+          doc.fillColor('#00B67A').font('Helvetica-Bold').text(`${c.matchScore}%`, 200, y + 10);
+          doc.fillColor('#475569').font('Helvetica').text(c.experience?.[0]?.title || 'Not Specified', 300, y + 10);
+          doc.text(c.email || 'N/A', 450, y + 10);
+          y += 30;
+        });
+
+        // 4. Candidate Detail Pages
+        candidatesWithReports.forEach((c, idx) => {
+          doc.addPage();
+          doc.fillColor('#2A2C4E').fontSize(18).font('Helvetica-Bold').text(`Candidate Profile #${idx + 1}: ${c.firstName} ${c.lastName}`, 40, 40);
+          doc.rect(40, 60, doc.page.width - 80, 2).fill('#EBF0FA');
+
+          doc.rect(40, 80, 150, 40).fill('#EBF0FA');
+          doc.fillColor('#2A2C4E').fontSize(10).font('Helvetica-Bold').text('COMPATIBILITY SCORE', 50, 88);
+          doc.fillColor('#00B67A').fontSize(14).font('Helvetica-Bold').text(`${c.matchScore}% Match`, 50, 102);
+
+          doc.fillColor('#2A2C4E').fontSize(11).font('Helvetica-Bold').text('Contact Details:', 220, 80);
+          doc.fillColor('#475569').fontSize(10).font('Helvetica').text(`Email: ${c.email || 'N/A'}`, 220, 95);
+          doc.text(`Phone: ${c.phone || 'N/A'}`, 220, 110);
+          doc.text(`Location: ${c.currentLocation || 'N/A'}`, 220, 125);
+
+          doc.fillColor('#2A2C4E').fontSize(12).font('Helvetica-Bold').text('AI Evaluation Summary:', 40, 160);
+          doc.fillColor('#475569').fontSize(9.5).font('Helvetica').text(c.summary, 40, 180, { width: doc.page.width - 80, align: 'justify' });
+
+          doc.fillColor('#2A2C4E').fontSize(12).font('Helvetica-Bold').text('Hiring Strengths & Recommendations:', 40, 280);
+          let sy = 300;
+          c.strengths.slice(0, 4).forEach((str) => {
+            doc.fillColor('#00B67A').text('• ', 40, sy);
+            doc.fillColor('#475569').text(str, 55, sy, { width: doc.page.width - 95 });
+            sy += 20;
+          });
+
+          doc.fillColor('#2A2C4E').fontSize(12).font('Helvetica-Bold').text('Key Experience Timeline:', 40, 400);
+          let ey = 420;
+          c.experience.slice(0, 3).forEach((exp) => {
+            doc.fillColor('#1A1C29').fontSize(10).font('Helvetica-Bold').text(`${exp.title} at ${exp.companyName}`, 40, ey);
+            doc.fillColor('#94A3B8').fontSize(9).font('Helvetica').text(`(${exp.startDate} to ${exp.endDate || 'Present'})`, 300, ey);
+            doc.fillColor('#475569').fontSize(9.5).font('Helvetica').text(exp.description || 'No description provided.', 40, ey + 15, { width: doc.page.width - 80 });
+            ey += 50;
+          });
+        });
+
+        doc.end();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
 }
+
+
+

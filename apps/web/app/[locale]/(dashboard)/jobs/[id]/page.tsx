@@ -146,6 +146,7 @@ export default function JobDetailPage() {
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [comparisonData, setComparisonData] = useState<any | null>(null);
   const [loadingComparison, setLoadingComparison] = useState(false);
+  const [isExportingPack, setIsExportingPack] = useState(false);
 
   // AI Recruiter Assistant
   const [showAssistant, setShowAssistant] = useState(false);
@@ -300,6 +301,36 @@ export default function JobDetailPage() {
       console.error('Failed to compare candidates', err);
     } finally {
       setLoadingComparison(false);
+    }
+  };
+
+  const handleExportClientPack = async () => {
+    if (!opening || selectedForCompare.length === 0) {
+      alert(locale === 'ar' ? 'يرجى اختيار مرشح واحد على الأقل للتصدير' : 'Please select at least one candidate to export');
+      return;
+    }
+    setIsExportingPack(true);
+    try {
+      const response = await api.post(`/ai/jobs/${opening.id}/client-pack`, {
+        candidateIds: selectedForCompare
+      }, {
+        responseType: 'blob'
+      });
+      
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `Client_Submission_Pack_${opening.title.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Failed to export client pack', err);
+      alert(locale === 'ar' ? 'فشل تصدير ملف العميل' : 'Failed to export client pack PDF');
+    } finally {
+      setIsExportingPack(false);
     }
   };
 
@@ -841,6 +872,21 @@ export default function JobDetailPage() {
                           }`}
                         >
                           <span>{locale === 'ar' ? `مقارنة (${selectedForCompare.length})` : `Compare (${selectedForCompare.length})`}</span>
+                        </button>
+
+                        {/* Export Client Pack Button */}
+                        <button
+                          type="button"
+                          onClick={handleExportClientPack}
+                          disabled={selectedForCompare.length === 0 || isExportingPack}
+                          className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+                            selectedForCompare.length > 0 && !isExportingPack
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]'
+                              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {isExportingPack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                          <span>{locale === 'ar' ? 'ملف العميل (PDF)' : 'Client PDF Pack'}</span>
                         </button>
 
                         {/* Shortlist Generator Button */}

@@ -11,7 +11,9 @@ import {
   MaxFileSizeValidator,
   FileTypeValidator,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AiService } from './ai.service';
 import { GenerateJdDto, GenerateQuestionsDto } from './dto/ai.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -188,4 +190,39 @@ export class AiController {
       throw new BadRequestException(error.message || 'Failed to get response from AI Assistant');
     }
   }
+
+  @Get('candidates/:candidateId/cv-score')
+  @ApiOperation({ summary: 'Get AI CV Quality Score for a candidate' })
+  async getCvScore(@Param('candidateId') candidateId: string) {
+    try {
+      const score = await this.aiService.getCvQualityScore(candidateId);
+      return { success: true, data: score };
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to get CV quality score');
+    }
+  }
+
+  @Post('jobs/:jobId/client-pack')
+  @ApiOperation({ summary: 'Export professional client submission pack PDF' })
+  async exportClientPack(
+    @Param('jobId') jobId: string,
+    @Body('candidateIds') candidateIds: string[],
+    @Res() res: Response,
+  ) {
+    if (!candidateIds || !Array.isArray(candidateIds) || candidateIds.length === 0) {
+      throw new BadRequestException('Candidate IDs are required');
+    }
+    try {
+      const pdfBuffer = await this.aiService.generateClientSubmissionPack(jobId, candidateIds);
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename=Client_Submission_Pack.pdf',
+        'Content-Length': pdfBuffer.length,
+      });
+      res.end(pdfBuffer);
+    } catch (error: any) {
+      throw new BadRequestException(error.message || 'Failed to generate Client Submission Pack');
+    }
+  }
 }
+
