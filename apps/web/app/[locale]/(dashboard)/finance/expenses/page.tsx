@@ -27,7 +27,7 @@ interface Expense {
 }
 
 export default function ExpensesPage() {
-  const t = useTranslations('finance.expenses');
+  const t = useTranslations('ats.finance.expenses');
   const params = useParams();
   const locale = params.locale as string;
   const { user } = useAuthStore();

@@ -39,7 +39,7 @@ interface Interview {
 }
 
 export default function InterviewsPage() {
-  const t = useTranslations('interviews');
+  const t = useTranslations('ats.interviews');
   const params = useParams();
   const locale = params.locale as string;
   const { user } = useAuthStore();

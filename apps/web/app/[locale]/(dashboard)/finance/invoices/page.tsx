@@ -28,7 +28,7 @@ interface Invoice {
 }
 
 export default function InvoicesPage() {
-  const t = useTranslations('finance.invoices');
+  const t = useTranslations('ats.finance.invoices');
   const params = useParams();
   const router = useRouter();
   const locale = params.locale as string;

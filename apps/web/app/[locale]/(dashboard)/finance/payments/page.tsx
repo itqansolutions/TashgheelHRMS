@@ -25,7 +25,7 @@ interface Payment {
 }
 
 export default function PaymentsPage() {
-  const t = useTranslations('finance.payments');
+  const t = useTranslations('ats.finance.payments');
   const params = useParams();
   const locale = params.locale as string;
   const { user } = useAuthStore();
