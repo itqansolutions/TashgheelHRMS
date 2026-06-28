@@ -40,6 +40,7 @@ interface VisaCase {
 export default function VisaProcessingPage() {
   const t = useTranslations('ats');
   const params = useParams();
+  const router = useRouter();
   const locale = params.locale as string;
 
   const [workflows, setWorkflows] = useState<VisaWorkflow[]>([]);
@@ -194,6 +195,15 @@ export default function VisaProcessingPage() {
           <Plane className="mb-4 h-16 w-16 text-slate-300" />
           <h3 className="text-base font-bold text-[#1A1C29]">No Workflow Selected</h3>
           <p className="mt-1 text-sm text-slate-400">Select a country workflow to view active visa cases.</p>
+          
+          {workflows.length === 0 && (
+            <button
+              onClick={() => router.push(`/${locale}/settings/visa-workflows`)}
+              className="mt-6 rounded-xl bg-[#2A2C4E] px-6 py-2.5 text-sm font-bold text-white shadow hover:bg-[#1f213b] transition"
+            >
+              Configure Workflows
+            </button>
+          )}
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto pb-4">
