@@ -1,12 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
+import { Injectable, Logger, OnModuleInit, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { GenerateJdDto, GenerateQuestionsDto } from './dto/ai.dto';
 import { ConfigService } from '@nestjs/config';
+import { GoogleGenAI } from '@google/genai';
+import { GenerateJdDto, GenerateQuestionsDto } from './dto/ai.dto';
 import PDFDocument from 'pdfkit';
 
 @Injectable()
-export class AiService {
+export class AiService implements OnModuleInit {
   private ai: GoogleGenAI;
   private readonly logger = new Logger(AiService.name);
 
@@ -16,6 +16,15 @@ export class AiService {
   ) {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
     this.ai = new GoogleGenAI({ apiKey });
+  }
+
+  async onModuleInit() {
+    try {
+      await this.db.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS vector;`);
+      this.logger.log('pgvector extension ensured.');
+    } catch (err) {
+      this.logger.warn('Could not ensure pgvector extension. It might require superuser privileges.');
+    }
   }
 
   private isMockKey(apiKey: string): boolean {
@@ -176,11 +185,14 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       let jsonStr = response.text || '{}';
       jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(jsonStr);
+      const reqEn = Array.isArray(parsed.requirementsEn) ? parsed.requirementsEn.map((r: string) => `- ${r}`).join('\n') : parsed.requirementsEn || '';
+      const reqAr = Array.isArray(parsed.requirementsAr) ? parsed.requirementsAr.map((r: string) => `- ${r}`).join('\n') : parsed.requirementsAr || '';
+
       return {
         descriptionEn: parsed.descriptionEn || '',
-        requirementsEn: parsed.requirementsEn || '',
+        requirementsEn: reqEn,
         descriptionAr: parsed.descriptionAr || '',
-        requirementsAr: parsed.requirementsAr || '',
+        requirementsAr: reqAr,
       };
     } catch (error: any) {
       this.logger.error('Failed to generate JD via Gemini', error);
