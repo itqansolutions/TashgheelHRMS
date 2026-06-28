@@ -11,6 +11,7 @@ export class PlacementsService {
   async create(dto: CreatePlacementDto, actorId: string) {
     const offer = await this.db.offer.findUnique({
       where: { id: dto.offerId },
+      include: { application: { include: { jobOpening: true } } }
     });
 
     if (!offer) {
@@ -63,6 +64,17 @@ export class PlacementsService {
           userId: actorId,
           note: 'Placement generated from accepted offer',
         },
+      });
+
+      // Auto-create Visa Case
+      await tx.visaCase.create({
+        data: {
+          placementId: createdPlacement.id,
+          candidateId: offer.application.candidateId,
+          jobId: offer.application.jobOpeningId,
+          companyId: offer.application.jobOpening.companyId,
+          status: 'PENDING',
+        }
       });
 
       // Log audit

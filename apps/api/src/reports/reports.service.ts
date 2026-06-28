@@ -18,10 +18,20 @@ export class ReportsService {
       _sum: { totalAmount: true },
     });
 
+    const upcomingInterviews = await this.db.interview.count({
+      where: { scheduledAt: { gte: new Date() } }
+    });
+    
+    const pendingInvoices = await this.db.invoice.count({
+      where: { status: { in: ['SENT', 'OVERDUE'] } }
+    });
+
     return {
       totalJobs,
       totalCandidates,
       activePipeline,
+      upcomingInterviews,
+      pendingInvoices,
       totalPlacements: placements,
       totalRevenue: invoices._sum.totalAmount ? Number(invoices._sum.totalAmount) : 0,
     };

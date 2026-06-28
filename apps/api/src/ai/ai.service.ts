@@ -270,37 +270,42 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
    * Note: Cosine distance is 0 for identical vectors, so smaller is better. We sort by distance ASC.
    */
   async findMatchingCandidatesForJob(jobId: string, limit = 10) {
-    const rawMatches = await this.db.$queryRawUnsafe<any[]>(`
-      SELECT c.id, 1 - (c.embedding <=> j.embedding) AS match_score
-      FROM "candidates" c, "job_openings" j
-      WHERE j.id = $1
-        AND c.embedding IS NOT NULL
-        AND j.embedding IS NOT NULL
-      ORDER BY c.embedding <=> j.embedding ASC
-      LIMIT $2;
-    `, jobId, limit);
+    try {
+      const rawMatches = await this.db.$queryRawUnsafe<any[]>(`
+        SELECT c.id, 1 - (c.embedding <=> j.embedding) AS match_score
+        FROM "candidates" c, "job_openings" j
+        WHERE j.id = $1::uuid
+          AND c.embedding IS NOT NULL
+          AND j.embedding IS NOT NULL
+        ORDER BY c.embedding <=> j.embedding ASC
+        LIMIT $2::int;
+      `, jobId, limit);
 
-    if (rawMatches.length === 0) return [];
+      if (rawMatches.length === 0) return [];
 
-    const candidateIds = rawMatches.map(m => m.id);
+      const candidateIds = rawMatches.map(m => m.id);
 
-    const candidates = await this.db.candidate.findMany({
-      where: { id: { in: candidateIds } },
-      include: {
-        skills: true,
-        experience: {
-          orderBy: { startDate: 'desc' }
+      const candidates = await this.db.candidate.findMany({
+        where: { id: { in: candidateIds } },
+        include: {
+          skills: true,
+          experience: {
+            orderBy: { startDate: 'desc' }
+          }
         }
-      }
-    });
+      });
 
-    return rawMatches.map(m => {
-      const cand = candidates.find(c => c.id === m.id);
-      return {
-        ...cand,
-        match_score: m.match_score
-      };
-    }).filter(c => c.id !== undefined);
+      return rawMatches.map(m => {
+        const cand = candidates.find(c => c.id === m.id);
+        return {
+          ...cand,
+          match_score: m.match_score
+        };
+      }).filter(c => c.id !== undefined);
+    } catch (error) {
+      console.error('ERROR in findMatchingCandidatesForJob:', error);
+      throw error;
+    }
   }
 
   /**
@@ -518,11 +523,11 @@ Here is a list of customized interview questions based on the candidate's skills
       FROM "job_openings" j
       INNER JOIN "job_requisitions" r ON j."requisitionId" = r.id
       CROSS JOIN "candidates" c
-      WHERE c.id = $1
+      WHERE c.id = $1::uuid
         AND c.embedding IS NOT NULL
         AND j.embedding IS NOT NULL
       ORDER BY j.embedding <=> c.embedding ASC
-      LIMIT $2;
+      LIMIT $2::int;
     `, candidateId, limit);
 
     return jobs;

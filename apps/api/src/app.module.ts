@@ -29,6 +29,8 @@ import { BullBoardModule } from '@bull-board/nestjs';
 import { ExpressAdapter } from '@bull-board/express';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { AutomationsModule } from './automations/automations.module';
+import { VisaWorkflowsModule } from './visa-workflows/visa-workflows.module';
+import { VisaCasesModule } from './visa-cases/visa-cases.module';
 
 @Module({
   imports: [
@@ -75,6 +77,8 @@ import { AutomationsModule } from './automations/automations.module';
     FinanceModule,
     AiModule,
     ReportsModule,
+    VisaWorkflowsModule,
+    VisaCasesModule,
   ],
 })
 export class AppModule {}
