@@ -104,6 +104,16 @@ export default function JobsPage() {
   const [opePage, setOpePage] = useState(1);
   const [opeTotal, setOpeTotal] = useState(0);
 
+  // Candidate Pools
+  const [pools, setPools] = useState<any[]>([]);
+  const [selectedPoolId, setSelectedPoolId] = useState<string>('');
+
+  // AI Matches Drawer
+  const [showAiDrawer, setShowAiDrawer] = useState(false);
+  const [selectedOpeningForAi, setSelectedOpeningForAi] = useState<Opening | null>(null);
+  const [aiMatches, setAiMatches] = useState<any[]>([]);
+  const [isFetchingAi, setIsFetchingAi] = useState(false);
+
   // Requisition Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -140,6 +150,15 @@ export default function JobsPage() {
       .then((res) => {
         if (res.data?.success) {
           setCompanies(res.data.companies);
+        }
+      })
+      .catch(() => {});
+
+    // Load Candidate Pools
+    api.get('/candidates/pools')
+      .then((res) => {
+        if (res.data?.success) {
+          setPools(res.data.data);
         }
       })
       .catch(() => {});
@@ -196,6 +215,40 @@ export default function JobsPage() {
       fetchOpenings();
     }
   }, [activeTab, reqPage, reqSearch, reqStatus, reqCompany, opePage, opeSearch, opeStatus, opeCompany]);
+
+  const fetchAiMatches = (jobId: string, poolId?: string) => {
+    setIsFetchingAi(true);
+    let url = `/ai/jobs/${jobId}/matches`;
+    if (poolId) {
+      url += `?poolId=${poolId}`;
+    }
+    api.get(url)
+      .then((res) => {
+        if (res.data?.success) {
+          setAiMatches(res.data.data);
+        }
+      })
+      .catch((err) => {
+        setErrorMsg(err.response?.data?.message || 'Failed to load matching candidates');
+      })
+      .finally(() => {
+        setIsFetchingAi(false);
+      });
+  };
+
+  const handleOpenAiDrawer = (opening: Opening) => {
+    setSelectedOpeningForAi(opening);
+    setSelectedPoolId('');
+    setShowAiDrawer(true);
+    fetchAiMatches(opening.id);
+  };
+
+  const handlePoolChange = (poolId: string) => {
+    setSelectedPoolId(poolId);
+    if (selectedOpeningForAi) {
+      fetchAiMatches(selectedOpeningForAi.id, poolId);
+    }
+  };
 
   const handleOpenCreateModal = () => {
     setFormData({
@@ -703,6 +756,14 @@ export default function JobsPage() {
                             <option value="CLOSED">{locale === 'ar' ? 'مغلق' : 'Closed'}</option>
                             <option value="FILLED">{locale === 'ar' ? 'تم التعيين' : 'Filled'}</option>
                           </select>
+
+                          <button
+                            onClick={() => handleOpenAiDrawer(ope)}
+                            title={locale === 'ar' ? 'توصيات الذكاء الاصطناعي' : 'AI Recommendations'}
+                            className="rounded-lg p-2 text-indigo-500 hover:bg-indigo-50 transition-colors"
+                          >
+                            <Sparkles className="h-4.5 w-4.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1075,6 +1136,126 @@ export default function JobsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* AI Matches Drawer */}
+      {showAiDrawer && selectedOpeningForAi && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-[#1A1C29]/40 backdrop-blur-sm transition-all duration-300">
+          <div className="flex h-full w-full flex-col bg-white shadow-2xl sm:w-[500px]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-[#1A1C29]">
+                    {locale === 'ar' ? 'توصيات الذكاء الاصطناعي' : 'AI Recommendations'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {selectedOpeningForAi.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAiDrawer(false)}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+              {/* Pool Filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  {locale === 'ar' ? 'البحث ضمن مجمع مرشحين (اختياري)' : 'Filter by Candidate Pool (Optional)'}
+                </label>
+                <select
+                  value={selectedPoolId}
+                  onChange={(e) => handlePoolChange(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-[#1A1C29] outline-none focus:border-indigo-500 transition-all"
+                >
+                  <option value="">{locale === 'ar' ? '-- كل المرشحين --' : '-- All Candidates --'}</option>
+                  {pools.map(pool => (
+                    <option key={pool.id} value={pool.id}>{pool.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {isFetchingAi ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-indigo-600 mb-4" />
+                  <p className="text-sm text-slate-500 font-medium">
+                    {locale === 'ar' ? 'جاري تحليل المرشحين بالذكاء الاصطناعي...' : 'AI is analyzing candidates...'}
+                  </p>
+                </div>
+              ) : aiMatches.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-8 text-center bg-white rounded-2xl border border-dashed border-slate-200">
+                  <Sparkles className="mb-3 h-8 w-8 text-slate-300" />
+                  <p className="text-sm font-medium text-[#1A1C29] mb-1">
+                    {locale === 'ar' ? 'لم يتم العثور على مرشحين مطابقين' : 'No matching candidates found'}
+                  </p>
+                  <p className="text-xs text-slate-500 max-w-[250px]">
+                    {locale === 'ar' ? 'جرب اختيار مجمع مرشحين آخر أو تأكد من وجود سير ذاتية مسجلة.' : 'Try selecting another pool or ensure candidates are registered.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {aiMatches.map((match: any) => {
+                    const score = Math.round((match.match_score || 0) * 100);
+                    let cardTheme = 'bg-indigo-50/30 border-indigo-100 hover:border-indigo-200';
+                    let categoryText = locale === 'ar' ? 'تطابق قوي' : 'Strong Match';
+                    let categoryColor = 'bg-indigo-100 text-indigo-700';
+
+                    if (score >= 90) {
+                      cardTheme = 'bg-emerald-50/30 border-emerald-100 hover:border-emerald-200';
+                      categoryText = locale === 'ar' ? 'تطابق ممتاز' : 'Excellent Match';
+                      categoryColor = 'bg-emerald-100 text-emerald-700';
+                    } else if (score >= 70 && score < 80) {
+                      cardTheme = 'bg-amber-50/30 border-amber-100 hover:border-amber-200';
+                      categoryText = locale === 'ar' ? 'تطابق جيد' : 'Good Match';
+                      categoryColor = 'bg-amber-100 text-amber-700';
+                    } else if (score < 70) {
+                      cardTheme = 'bg-slate-50/30 border-slate-100 hover:border-slate-200';
+                      categoryText = locale === 'ar' ? 'تطابق جزئي' : 'Partial Match';
+                      categoryColor = 'bg-slate-100 text-slate-700';
+                    }
+
+                    return (
+                      <div key={match.id} className={`rounded-xl border p-4 transition-all ${cardTheme}`}>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h4 className="font-bold text-[#1A1C29] cursor-pointer hover:underline" onClick={() => router.push(`/${locale}/candidates/${match.id}`)}>
+                              {match.firstName} {match.lastName}
+                            </h4>
+                            <p className="text-sm text-slate-500 mt-1">{match.email}</p>
+                            {match.experience && match.experience.length > 0 && (
+                              <p className="text-xs text-slate-600 mt-2 font-medium line-clamp-1">
+                                <Briefcase className="inline h-3 w-3 mr-1" />
+                                {match.experience[0].title} {locale === 'ar' ? 'في' : 'at'} {match.experience[0].companyName}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${categoryColor}`}>
+                                {categoryText}
+                              </span>
+                            </div>
+                            <div className="text-2xl font-black text-[#1A1C29]">
+                              {score}<span className="text-lg text-slate-400">%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

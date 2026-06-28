@@ -117,6 +117,10 @@ export default function JobDetailPage() {
   const [activeSubTab, setActiveSubTab] = useState<'applied' | 'ai_matches'>('applied');
   const [aiMatches, setAiMatches] = useState<any[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
+  const [pools, setPools] = useState<any[]>([]);
+  const [selectedPoolId, setSelectedPoolId] = useState<string>('');
+  const [matchSearch, setMatchSearch] = useState('');
+  const [minMatchScore, setMinMatchScore] = useState<number>(0);
 
   // Filters for AI matches
   const [minScore, setMinScore] = useState<number>(0); // 0, 70, 80, 90
@@ -184,13 +188,26 @@ export default function JobDetailPage() {
       .finally(() => {
         setIsLoading(false);
       });
+
+    // Load Candidate Pools
+    api.get('/candidates/pools')
+      .then((res) => {
+        if (res.data?.success) {
+          setPools(res.data.data);
+        }
+      })
+      .catch(() => {});
   };
 
-  const fetchAiMatches = async () => {
+  const fetchAiMatches = async (poolId?: string) => {
     if (!opening) return;
     setLoadingMatches(true);
     try {
-      const res = await api.get(`/ai/jobs/${opening.id}/matches`);
+      let url = `/ai/jobs/${opening.id}/matches`;
+      if (poolId || selectedPoolId) {
+        url += `?poolId=${poolId ?? selectedPoolId}`;
+      }
+      const res = await api.get(url);
       if (res.data?.success) {
         setAiMatches(res.data.data);
       }
@@ -820,6 +837,26 @@ export default function JobDetailPage() {
                     {/* Action & Filter Bar */}
                     <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
                       <div className="flex flex-wrap items-center gap-4">
+                        {/* Pool Filter */}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400 font-medium">
+                            {locale === 'ar' ? 'مجمع المرشحين:' : 'Pool:'}
+                          </span>
+                          <select 
+                            value={selectedPoolId} 
+                            onChange={(e) => {
+                              setSelectedPoolId(e.target.value);
+                              fetchAiMatches(e.target.value);
+                            }}
+                            className="bg-white border border-slate-200 rounded px-2.5 py-1 outline-none text-[#2A2C4E] font-semibold max-w-[150px] truncate"
+                          >
+                            <option value="">{locale === 'ar' ? 'كل المرشحين' : 'All Candidates'}</option>
+                            {pools.map(pool => (
+                              <option key={pool.id} value={pool.id}>{pool.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
                         {/* Minimum Score */}
                         <div className="flex items-center gap-1.5">
                           <span className="text-slate-400 font-medium">

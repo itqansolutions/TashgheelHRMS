@@ -281,17 +281,28 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
    * Match candidates against a Job Opening's embedding using Cosine Distance (<=>).
    * Note: Cosine distance is 0 for identical vectors, so smaller is better. We sort by distance ASC.
    */
-  async findMatchingCandidatesForJob(jobId: string, limit = 10) {
+  async findMatchingCandidatesForJob(jobId: string, limit = 10, poolId?: string) {
     try {
-      const rawMatches = await this.db.$queryRawUnsafe<any[]>(`
+      let query = `
         SELECT c.id, 1 - (c.embedding <=> j.embedding) AS match_score
         FROM "candidates" c, "job_openings" j
         WHERE j.id = $1::uuid
           AND c.embedding IS NOT NULL
           AND j.embedding IS NOT NULL
+      `;
+      const params: any[] = [jobId, limit];
+
+      if (poolId) {
+        query += ` AND c.id IN (SELECT "candidateId" FROM "candidate_pool_members" WHERE "poolId" = $3::uuid) `;
+        params.push(poolId);
+      }
+
+      query += `
         ORDER BY c.embedding <=> j.embedding ASC
         LIMIT $2::int;
-      `, jobId, limit);
+      `;
+
+      const rawMatches = await this.db.$queryRawUnsafe<any[]>(query, ...params);
 
       if (rawMatches.length === 0) return [];
 

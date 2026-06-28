@@ -12,6 +12,7 @@ import {
   FileTypeValidator,
   BadRequestException,
   Res,
+  Query,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { AiService } from './ai.service';
@@ -92,8 +93,8 @@ export class AiController {
 
   @Get('jobs/:id/matches')
   @ApiOperation({ summary: 'Find top matching candidates for a job based on vector embeddings' })
-  async findMatches(@Param('id') id: string) {
-    const candidates = await this.aiService.findMatchingCandidatesForJob(id, 10);
+  async findMatches(@Param('id') id: string, @Query('poolId') poolId?: string) {
+    const candidates = await this.aiService.findMatchingCandidatesForJob(id, 10, poolId);
     return { success: true, data: candidates };
   }
 
