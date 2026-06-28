@@ -176,6 +176,7 @@ export default function CandidateDetailPage() {
   } | null>(null);
   const [loadingCvScore, setLoadingCvScore] = useState(false);
   const [isReparsing, setIsReparsing] = useState(false);
+  const [isResyncing, setIsResyncing] = useState(false);
 
   // Edit State
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -273,6 +274,23 @@ export default function CandidateDetailPage() {
       alert(err.response?.data?.message || 'Failed to reparse CV');
     } finally {
       setIsReparsing(false);
+    }
+  };
+
+  const handleResyncAi = async () => {
+    setIsResyncing(true);
+    try {
+      const res = await api.post(`/candidates/${id}/resync-ai`);
+      if (res.data?.success) {
+        alert(locale === 'ar' ? 'تم تحديث ومزامنة الذكاء الاصطناعي بنجاح!' : 'AI Synced and embeddings recalculated successfully!');
+        fetchCandidateDetails();
+        fetchRecommendedJobs();
+      }
+    } catch (err: any) {
+      console.error('Failed to resync AI', err);
+      alert(err.response?.data?.message || 'Failed to resync AI');
+    } finally {
+      setIsResyncing(false);
     }
   };
 
@@ -423,7 +441,7 @@ export default function CandidateDetailPage() {
         </button>
 
         <div className="flex gap-2">
-          {cvDoc && (
+          {cvDoc ? (
             <button
               onClick={handleReparseCv}
               disabled={isReparsing}
@@ -435,6 +453,19 @@ export default function CandidateDetailPage() {
                 <RefreshCw className="h-4 w-4" />
               )}
               <span>{locale === 'ar' ? 'إعادة تحليل السيرة' : 'Reparse CV'}</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleResyncAi}
+              disabled={isResyncing}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-650 hover:bg-indigo-100 active:scale-[0.98] transition-all"
+            >
+              {isResyncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span>{locale === 'ar' ? 'مزامنة الذكاء الاصطناعي' : 'Sync AI Matches'}</span>
             </button>
           )}
           <button
@@ -616,7 +647,7 @@ export default function CandidateDetailPage() {
                   </div>
                 )}
 
-                {cvDoc && (
+                {cvDoc ? (
                   <button
                     onClick={handleReparseCv}
                     disabled={isReparsing}
@@ -628,6 +659,19 @@ export default function CandidateDetailPage() {
                       <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
                     )}
                     <span>{locale === 'ar' ? 'إعادة تحليل السيرة الذاتية' : 'Reparse CV'}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleResyncAi}
+                    disabled={isResyncing}
+                    className="w-full flex items-center justify-center gap-1.5 mt-4 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 py-2.5 text-xs font-bold text-slate-700 disabled:opacity-50 active:scale-[0.98] transition-all"
+                  >
+                    {isResyncing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
+                    )}
+                    <span>{locale === 'ar' ? 'مزامنة الذكاء الاصطناعي' : 'Sync AI Matches'}</span>
                   </button>
                 )}
               </div>

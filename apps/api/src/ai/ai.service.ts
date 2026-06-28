@@ -124,6 +124,17 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
     };
   }
 
+  private parseSafeJson<T = any>(text: string): T {
+    let clean = text.trim();
+    const start = clean.indexOf('{');
+    const end = clean.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      clean = clean.substring(start, end + 1);
+    }
+    clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
+    return JSON.parse(clean);
+  }
+
   /**
    * Generates a 768-dimensional embedding vector for a given text using Gemini.
    */
@@ -963,9 +974,8 @@ Here is a list of customized interview questions based on the candidate's skills
         contents: prompt,
       });
 
-      let jsonStr = response.text || '{}';
-      jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(jsonStr);
+      const jsonStr = response.text || '{}';
+      return this.parseSafeJson(jsonStr);
     } catch (error: any) {
       this.logger.error('Failed to calculate CV quality score via Gemini', error);
       throw new Error(`AI Provider Error: ${error?.message || error}`);

@@ -218,4 +218,14 @@ export class CandidatesController {
     const data = await this.candidatesService.reparseCandidateCv(id, actor.id);
     return { success: true, data };
   }
+
+  @Post(':id/resync-ai')
+  @Permissions('candidates:write')
+  @ApiOperation({ summary: 'Regenerate and sync candidate embedding vector for matching' })
+  async resyncAi(
+    @Param('id') id: string,
+  ) {
+    const result = await this.candidatesService.resyncCandidateEmbedding(id);
+    return result;
+  }
 }

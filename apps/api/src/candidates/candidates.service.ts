@@ -986,4 +986,37 @@ export class CandidatesService {
 
     return updatedCandidate;
   }
+
+  async resyncCandidateEmbedding(id: string) {
+    const candidate = await this.findOne(id);
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found');
+    }
+
+    try {
+      const skillsArray = Array.isArray(candidate.skills) ? candidate.skills.map((s: any) => s.skillName) : [];
+      const expArray = Array.isArray(candidate.experience) ? candidate.experience.map((e: any) => {
+        const dateStr = e.isCurrent ? 'Present' : e.endDate ? new Date(e.endDate).getFullYear() : '';
+        return `${e.title} at ${e.companyName} (${dateStr}): ${e.description || ''}`;
+      }) : [];
+      const eduArray = Array.isArray(candidate.education) ? candidate.education.map((e: any) => 
+        `${e.degree} in ${e.fieldOfStudy || ''} from ${e.institution}`
+      ) : [];
+
+      const textParts = [
+        `Candidate: ${candidate.firstName} ${candidate.lastName}`,
+        `Summary: ${candidate.aiSummary || ''}`,
+        `Skills: ${skillsArray.join(', ')}`
+      ];
+
+      if (expArray.length > 0) textParts.push(`Experience: ${expArray.join('. ')}`);
+      if (eduArray.length > 0) textParts.push(`Education: ${eduArray.join('. ')}`);
+
+      await this.aiService.syncCandidateEmbedding(candidate.id, textParts.join('\n'));
+      return { success: true };
+    } catch (err) {
+      this.logger.error(`Failed to manually sync embedding for candidate ${candidate.id}`, err);
+      throw new BadRequestException('Failed to generate AI embedding');
+    }
+  }
 }

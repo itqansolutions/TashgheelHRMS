@@ -39,7 +39,7 @@ interface Offer {
 }
 
 export default function OffersPage() {
-  const t = useTranslations('offers');
+  const t = useTranslations('ats.offers');
   const params = useParams();
   const router = useRouter();
   const locale = params.locale as string;
