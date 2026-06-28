@@ -18,6 +18,7 @@ import {
   AlertCircle,
   FolderOpen,
   UserCheck,
+  Sparkles,
 } from 'lucide-react';
 
 interface Candidate {
@@ -66,6 +67,8 @@ export default function CandidatesPage() {
   const [locationFilter, setLocationFilter] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState('');
   const [salaryMaxFilter, setSalaryMaxFilter] = useState('');
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [selectedJobFilter, setSelectedJobFilter] = useState('');
 
   // Modals state
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
@@ -203,6 +206,23 @@ export default function CandidatesPage() {
 
   const fetchCandidates = () => {
     setIsLoading(true);
+    if (selectedJobFilter) {
+      api.get(`/ai/jobs/${selectedJobFilter}/matches`)
+        .then((res) => {
+          if (res.data?.success) {
+            setCandidates(res.data.data);
+            setTotal(res.data.data.length);
+          }
+        })
+        .catch((err) => {
+          setErrorMsg(err.response?.data?.message || 'Failed to load matching candidates');
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+      return;
+    }
+
     const paramsObj: any = { page, limit };
     if (search) paramsObj.search = search;
     if (skillsFilter) paramsObj.skills = skillsFilter;
@@ -225,6 +245,16 @@ export default function CandidatesPage() {
       });
   };
 
+  const fetchJobs = () => {
+    api.get('/jobs/openings', { params: { limit: 100 } })
+      .then((res) => {
+        if (res.data?.success) {
+          setJobs(res.data.openings || []);
+        }
+      })
+      .catch(() => {});
+  };
+
   const fetchPools = () => {
     api.get('/candidates/pools')
       .then((res) => {
@@ -237,10 +267,11 @@ export default function CandidatesPage() {
 
   useEffect(() => {
     fetchCandidates();
-  }, [page, search, skillsFilter, locationFilter, availabilityFilter, salaryMaxFilter]);
+  }, [page, search, skillsFilter, locationFilter, availabilityFilter, salaryMaxFilter, selectedJobFilter]);
 
   useEffect(() => {
     fetchPools();
+    fetchJobs();
   }, []);
 
   const handleQuickAdd = async (e: React.FormEvent) => {
@@ -393,10 +424,41 @@ export default function CandidatesPage() {
       <div className="grid gap-6 lg:grid-cols-4">
         {/* Sidebar Filters */}
         <div className="lg:col-span-1 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm h-fit space-y-5">
-          <h3 className="text-sm font-bold text-[#2A2C4E] uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
-            <Filter className="h-4.5 w-4.5 text-slate-400" />
-            <span>{locale === 'ar' ? 'تصفية النتائج' : 'Filter Candidates'}</span>
-          </h3>
+          {/* Job Recommendation Filter */}
+          <div className="space-y-1 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/50">
+            <label className="text-[11px] font-extrabold text-indigo-500 uppercase tracking-wider block flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>{locale === 'ar' ? 'الترشيحات الذكية للوظائف' : 'AI Job Recommendations'}</span>
+            </label>
+            <select
+              value={selectedJobFilter}
+              onChange={(e) => {
+                setSelectedJobFilter(e.target.value);
+                setPage(1);
+                // Clear other filters to avoid confusion
+                if (e.target.value) {
+                  setSearch('');
+                  setSkillsFilter('');
+                  setLocationFilter('');
+                  setAvailabilityFilter('');
+                  setSalaryMaxFilter('');
+                }
+              }}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:border-indigo-500 transition-all font-semibold"
+            >
+              <option value="">{locale === 'ar' ? 'اختر وظيفة لعرض مرشحيها المقترحين' : 'Select a job to find matches'}</option>
+              {jobs.map((job) => (
+                <option key={job.id} value={job.id}>
+                  {job.title}
+                </option>
+              ))}
+            </select>
+            {selectedJobFilter && (
+              <span className="text-[10px] text-indigo-500 block mt-1 leading-snug">
+                {locale === 'ar' ? '💡 يظهر هذا الفلتر أفضل المرشحين تطابقاً مع متطلبات الوظيفة مرتبين تنازلياً.' : '💡 Showing top candidates compatible with this job, sorted by compatibility score.'}
+              </span>
+            )}
+          </div>
 
           {/* Search Bar inside Filters */}
           <div className="space-y-1">
@@ -485,6 +547,7 @@ export default function CandidatesPage() {
               setLocationFilter('');
               setAvailabilityFilter('');
               setSalaryMaxFilter('');
+              setSelectedJobFilter('');
               setPage(1);
             }}
             className="w-full rounded-xl border border-slate-200 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-50 transition-colors"
@@ -527,12 +590,20 @@ export default function CandidatesPage() {
                       return (
                         <tr key={cand.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="whitespace-nowrap px-6 py-4 font-bold text-[#1A1C29] rtl:text-right">
-                            <button
-                              onClick={() => router.push(`/${locale}/candidates/${cand.id}`)}
-                              className="text-left font-bold text-[#2A2C4E] hover:text-[#00B67A] transition-colors rtl:text-right"
-                            >
-                              {cand.firstName} {cand.lastName}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => router.push(`/${locale}/candidates/${cand.id}`)}
+                                className="text-left font-bold text-[#2A2C4E] hover:text-[#00B67A] transition-colors rtl:text-right"
+                              >
+                                {cand.firstName} {cand.lastName}
+                              </button>
+                              {(cand as any).match_score !== undefined && (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-100">
+                                  <Sparkles className="h-2.5 w-2.5 text-indigo-500" />
+                                  <span>{Math.round((cand as any).match_score * 100)}%</span>
+                                </span>
+                              )}
+                            </div>
                             <div className="text-xs font-normal text-slate-400 mt-0.5">
                               {cand.email || '-'}
                             </div>

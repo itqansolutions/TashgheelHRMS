@@ -270,9 +270,8 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
    * Note: Cosine distance is 0 for identical vectors, so smaller is better. We sort by distance ASC.
    */
   async findMatchingCandidatesForJob(jobId: string, limit = 10) {
-    const candidates = await this.db.$queryRawUnsafe<any[]>(`
-      SELECT c.id, c."firstName", c."lastName", c.email, c."aiSummary", c.availability, c."expectedSalary",
-             1 - (c.embedding <=> j.embedding) AS match_score
+    const rawMatches = await this.db.$queryRawUnsafe<any[]>(`
+      SELECT c.id, 1 - (c.embedding <=> j.embedding) AS match_score
       FROM "candidates" c, "job_openings" j
       WHERE j.id = $1
         AND c.embedding IS NOT NULL
@@ -281,7 +280,27 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       LIMIT $2;
     `, jobId, limit);
 
-    return candidates;
+    if (rawMatches.length === 0) return [];
+
+    const candidateIds = rawMatches.map(m => m.id);
+
+    const candidates = await this.db.candidate.findMany({
+      where: { id: { in: candidateIds } },
+      include: {
+        skills: true,
+        experience: {
+          orderBy: { startDate: 'desc' }
+        }
+      }
+    });
+
+    return rawMatches.map(m => {
+      const cand = candidates.find(c => c.id === m.id);
+      return {
+        ...cand,
+        match_score: m.match_score
+      };
+    }).filter(c => c.id !== undefined);
   }
 
   /**
