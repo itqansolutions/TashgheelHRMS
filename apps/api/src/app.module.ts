@@ -31,6 +31,7 @@ import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { AutomationsModule } from './automations/automations.module';
 import { VisaWorkflowsModule } from './visa-workflows/visa-workflows.module';
 import { VisaCasesModule } from './visa-cases/visa-cases.module';
+import { AppSchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { VisaCasesModule } from './visa-cases/visa-cases.module';
     ReportsModule,
     VisaWorkflowsModule,
     VisaCasesModule,
+    AppSchedulerModule,
   ],
 })
 export class AppModule {}

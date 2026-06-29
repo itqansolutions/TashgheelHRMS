@@ -1,12 +1,20 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferStatusDto } from './dto/update-offer-status.dto';
-import { OfferStatus, ApplicationStage } from '@repo/database';
+import { OfferStatus, ApplicationStage, GuaranteeStatus, PlacementStatus } from '@repo/database';
+import { NotificationsService } from '../notifications/notifications.service';
+import { InvoicesService } from '../finance/invoices.service';
 
 @Injectable()
 export class OffersService {
-  constructor(private readonly db: DatabaseService) {}
+  private readonly logger = new Logger(OffersService.name);
+
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly notificationsService: NotificationsService,
+    private readonly invoicesService: InvoicesService,
+  ) {}
 
   async create(dto: CreateOfferDto, actorId: string) {
     const application = await this.db.application.findUnique({
@@ -38,7 +46,12 @@ export class OffersService {
       });
 
       // Update application stage to OFFER if not already
-      if (application.stage !== ApplicationStage.OFFER && application.stage !== ApplicationStage.PLACEMENT && application.stage !== ApplicationStage.REJECTED && application.stage !== ApplicationStage.WITHDRAWN) {
+      if (
+        application.stage !== ApplicationStage.OFFER &&
+        application.stage !== ApplicationStage.PLACEMENT &&
+        application.stage !== ApplicationStage.REJECTED &&
+        application.stage !== ApplicationStage.WITHDRAWN
+      ) {
         await tx.application.update({
           where: { id: dto.applicationId },
           data: { stage: ApplicationStage.OFFER },
@@ -55,7 +68,6 @@ export class OffersService {
         });
       }
 
-      // Log audit
       await tx.auditLog.create({
         data: {
           userId: actorId,
@@ -189,7 +201,181 @@ export class OffersService {
       },
     });
 
+    // ====================================================
+    // EVENT: OFFER_ACCEPTED — Trigger automated workflows
+    // ====================================================
+    if (dto.status === OfferStatus.ACCEPTED) {
+      this.handleOfferAccepted(id, offer, actorId).catch((err) =>
+        this.logger.error(`[EVENT:OFFER_ACCEPTED] Failed for offer ${id}`, err),
+      );
+    }
+
     return this.findOne(id);
+  }
+
+  /**
+   * EVENT HANDLER: Offer Accepted
+   * Automatically:
+   * 1. Creates a Placement record
+   * 2. Auto-creates an Invoice linked to the Placement (Net 30, 15% recruitment fee, 15% VAT)
+   * 3. Auto-creates a Visa Case (inside placement transaction)
+   * 4. Sends real-time WebSocket notifications to Recruiter & Finance team
+   */
+  private async handleOfferAccepted(offerId: string, offer: any, actorId: string) {
+    this.logger.log(`[EVENT:OFFER_ACCEPTED] Processing offer ${offerId}`);
+
+    try {
+      const candidate = offer.application.candidate;
+      const jobOpening = offer.application.jobOpening;
+      const company = jobOpening.company;
+
+      // === 1. Auto-create Placement ===
+      const startDate = offer.startDate ?? new Date();
+      const guaranteeDays = 90;
+      const guaranteeEndDate = new Date(startDate);
+      guaranteeEndDate.setDate(guaranteeEndDate.getDate() + guaranteeDays);
+
+      const existingPlacement = await this.db.placement.findUnique({
+        where: { offerId },
+      });
+
+      let placement: any = existingPlacement;
+
+      if (!existingPlacement) {
+        placement = await this.db.$transaction(async (tx) => {
+          const created = await tx.placement.create({
+            data: {
+              offerId,
+              applicationId: offer.applicationId,
+              startDate: new Date(startDate),
+              feeAmount: Number(offer.salaryAmount) * 0.15, // Default 15% recruitment fee
+              feeType: 'PERCENTAGE',
+              guaranteeDays,
+              guaranteeEndDate,
+              guaranteeStatus: GuaranteeStatus.ACTIVE,
+              status: PlacementStatus.GUARANTEE_PERIOD,
+            },
+          });
+
+          // Update application stage to PLACEMENT
+          await tx.application.update({
+            where: { id: offer.applicationId },
+            data: { stage: ApplicationStage.PLACEMENT },
+          });
+
+          await tx.applicationStageLog.create({
+            data: {
+              applicationId: offer.applicationId,
+              fromStage: ApplicationStage.OFFER,
+              toStage: ApplicationStage.PLACEMENT,
+              userId: actorId,
+              note: 'Auto-placed: Offer accepted by candidate',
+            },
+          });
+
+          // Auto-create Visa Case
+          await tx.visaCase.create({
+            data: {
+              placementId: created.id,
+              candidateId: offer.application.candidateId,
+              jobId: offer.application.jobOpeningId,
+              companyId: company.id,
+              status: 'PENDING',
+            },
+          });
+
+          await tx.auditLog.create({
+            data: {
+              userId: actorId,
+              action: 'AUTO_CREATE',
+              resource: 'Placement',
+              resourceId: created.id,
+              afterValue: created as any,
+            },
+          });
+
+          return created;
+        });
+
+        this.logger.log(`[EVENT:OFFER_ACCEPTED] Placement created: ${placement.id}`);
+      } else {
+        this.logger.log(`[EVENT:OFFER_ACCEPTED] Placement already exists: ${existingPlacement.id}`);
+      }
+
+      // === 2. Auto-create Invoice (Net 30, 15% recruitment fee + 15% VAT) ===
+      try {
+        const feeAmount = Number(offer.salaryAmount) * 0.15;
+        const issueDate = new Date();
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 30); // Net 30
+
+        await this.invoicesService.create(
+          {
+            companyId: company.id,
+            placementId: placement.id,
+            issueDate: issueDate.toISOString(),
+            dueDate: dueDate.toISOString(),
+            vatRate: 15,
+            items: [
+              {
+                description: `Recruitment Service Fee — ${candidate.firstName} ${candidate.lastName} (${jobOpening.title})`,
+                quantity: 1,
+                unitPrice: feeAmount,
+              },
+            ],
+          },
+          actorId,
+        );
+        this.logger.log(`[EVENT:OFFER_ACCEPTED] Invoice auto-created for placement ${placement.id}`);
+      } catch (invoiceErr) {
+        this.logger.error(`[EVENT:OFFER_ACCEPTED] Invoice creation failed (non-critical)`, invoiceErr);
+      }
+
+      // === 3. Send Real-time Notifications ===
+      const candidateName = `${candidate.firstName} ${candidate.lastName}`;
+
+      // Notify the recruiter
+      if (offer.application.recruiterId) {
+        await this.notificationsService.createNotification({
+          userId: offer.application.recruiterId,
+          type: 'OFFER_ACCEPTED',
+          title: '🎉 Offer Accepted!',
+          message: `${candidateName} accepted the offer for ${jobOpening.title} at ${company.name}. A placement and invoice have been automatically created.`,
+          metadata: { offerId, placementId: placement.id },
+        }).catch(() => {});
+      }
+
+      // Notify Finance team users (Admin + Finance roles)
+      const financeUsers = await this.db.user.findMany({
+        where: {
+          userRoles: {
+            some: {
+              role: {
+                name: { in: ['Finance', 'Admin', 'finance', 'admin'] },
+              },
+            },
+          },
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+        take: 10,
+      });
+
+      for (const finUser of financeUsers) {
+        await this.notificationsService.createNotification({
+          userId: finUser.id,
+          type: 'INVOICE_GENERATED',
+          title: '📄 New Invoice Generated',
+          message: `An invoice has been automatically generated for the placement of ${candidateName} at ${company.name}. Please review and send to client.`,
+          metadata: { offerId, placementId: placement.id },
+        }).catch(() => {});
+      }
+
+      this.logger.log(`[EVENT:OFFER_ACCEPTED] All automations completed for offer ${offerId}`);
+    } catch (err) {
+      this.logger.error(`[EVENT:OFFER_ACCEPTED] Critical error for offer ${offerId}`, err);
+      throw err;
+    }
   }
 
   async approveOffer(id: string, actorId: string) {
@@ -223,20 +409,15 @@ export class OffersService {
         afterValue: updated as any,
       },
     });
-    
-    try {
-      await this.db.systemNotification.create({
-        data: {
-          userId: offer.creatorId,
-          type: 'OFFER_APPROVED',
-          title: 'Offer Approved',
-          message: `The offer for ${offer.application.candidate.firstName} ${offer.application.candidate.lastName} has been approved.`,
-          metadata: { offerId: id },
-        },
-      });
-    } catch(err) {
-      console.error(err);
-    }
+
+    // Use NotificationsService for proper WebSocket push (previously used raw DB create, bypassing WS)
+    await this.notificationsService.createNotification({
+      userId: offer.creatorId,
+      type: 'OFFER_APPROVED',
+      title: 'Offer Approved ✅',
+      message: `The offer for ${offer.application.candidate.firstName} ${offer.application.candidate.lastName} has been approved and is ready to be sent to the candidate.`,
+      metadata: { offerId: id },
+    }).catch(() => {});
 
     return this.findOne(id);
   }
@@ -273,19 +454,14 @@ export class OffersService {
       },
     });
 
-    try {
-      await this.db.systemNotification.create({
-        data: {
-          userId: offer.creatorId,
-          type: 'OFFER_REJECTED',
-          title: 'Offer Rejected',
-          message: `The offer for ${offer.application.candidate.firstName} ${offer.application.candidate.lastName} was rejected. Reason: ${reason}`,
-          metadata: { offerId: id },
-        },
-      });
-    } catch(err) {
-      console.error(err);
-    }
+    // Use NotificationsService for proper WebSocket push (previously used raw DB create, bypassing WS)
+    await this.notificationsService.createNotification({
+      userId: offer.creatorId,
+      type: 'OFFER_REJECTED',
+      title: 'Offer Rejected ❌',
+      message: `The offer for ${offer.application.candidate.firstName} ${offer.application.candidate.lastName} was rejected. Reason: ${reason}`,
+      metadata: { offerId: id },
+    }).catch(() => {});
 
     return this.findOne(id);
   }
