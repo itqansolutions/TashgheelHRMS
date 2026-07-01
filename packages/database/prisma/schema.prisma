@@ -262,14 +262,20 @@ model JobRequisition {
   descriptionEn   String
   descriptionAr   String?
   requirementsEn  String
-  requirementsAr  String?
-  deadline        DateTime?
-  status          JobRequisitionStatus @default(DRAFT)
-  creatorId       String               @db.Uuid
-  approverId      String?              @db.Uuid
-  rejectionReason String?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  requirementsAr      String?
+  deadline            DateTime?
+  status              JobRequisitionStatus @default(DRAFT)
+  creatorId           String               @db.Uuid
+  approverId          String?              @db.Uuid
+  rejectionReason     String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  // AI Matching fields
+  seniorityLevel      String?  // Junior | Mid | Senior | Lead | Executive
+  minExperienceYears  Int?
+  requiredSkills      Json?    // [{skill, required, minLevel, minYears}]
+  requiredLanguages   Json?    // [{language, level}]
 
   company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   creator    User        @relation("RequisitionCreator", fields: [creatorId], references: [id], onDelete: Cascade)
@@ -323,15 +329,23 @@ model Candidate {
   nationality     String?
   currentLocation String?
   expectedSalary  Decimal?              @db.Decimal(12, 2)
-  availability    CandidateAvailability @default(AVAILABLE)
-  source          String?
-  deletedAt       DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  aiSummary       String?               @db.Text
+  availability         CandidateAvailability @default(AVAILABLE)
+  source               String?
+  deletedAt            DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  aiSummary            String?               @db.Text
+
+  // AI Matching fields
+  seniorityLevel       String?  // Junior | Mid | Senior | Lead | Executive
+  totalYearsExperience Int?
+  industryBackground   String?  // e.g. "FinTech, SaaS"
+  certifications       Json?    // [{name, issuingOrganization, year}]
+  languages            Json?    // [{language, proficiency}]
 
   // Custom type for vector database search (768 dim for Gemini embeddings)
   embedding Unsupported("vector(768)")?
+
 
   experience      CandidateExperience[]
   education       CandidateEducation[]

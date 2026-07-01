@@ -490,13 +490,13 @@ export default function JobDetailPage() {
   const reqEn = isOpening ? opening?.requisition.requirementsEn : requisition?.requirementsEn;
   const reqAr = isOpening ? opening?.requisition.requirementsAr : requisition?.requirementsAr;
 
-  const filteredMatches = aiMatches.filter((match: any) => {
-    const score = Math.round((match.match_score || 0) * 100);
-    if (minScore > 0 && score < minScore) return false;
-    if (onlyAvailable && match.availability !== 'AVAILABLE') return false;
-    if (withinSalary && (opening?.requisition?.salaryMax || requisition?.salaryMax) && match.expectedSalary) {
+  const filteredMatches = aiMatches.filter((m: any) => {
+    const effectiveMatchScore = (m as any).hybridScore ?? Math.round(((m as any).match_score || 0) * 100);
+    if (minScore > 0 && effectiveMatchScore < minScore) return false;
+    if (onlyAvailable && m.availability !== 'AVAILABLE') return false;
+    if (withinSalary && (opening?.requisition?.salaryMax || requisition?.salaryMax) && m.expectedSalary) {
       const maxVal = Number(opening?.requisition?.salaryMax || requisition?.salaryMax);
-      if (Number(match.expectedSalary) > maxVal) return false;
+      if (Number(m.expectedSalary) > maxVal) return false;
     }
     return true;
   });
@@ -962,25 +962,26 @@ export default function JobDetailPage() {
                     ) : (
                       <div className="space-y-3">
                         {filteredMatches.map((match: any) => {
-                          const score = Math.round((match.match_score || 0) * 100);
+                          const displayScore = (match as any).hybridScore ?? Math.round(((match as any).match_score || 0) * 100);
+                          const score = displayScore;
                           const isSelected = selectedForCompare.includes(match.id);
                           const starCount = score >= 90 ? 5 : score >= 80 ? 4 : score >= 70 ? 3 : score >= 60 ? 2 : 1;
-                          
-                          let cardTheme = 'bg-indigo-50/30 border-indigo-100 hover:bg-indigo-50/80';
-                          let categoryText = 'Strong Match';
-                          let categoryColor = 'bg-indigo-100 text-indigo-700';
 
-                          if (score >= 90) {
+                          const effectiveCategory = (match as any).hybridBreakdown?.matchCategory ||
+                            (score >= 90 ? 'Excellent Match' : score >= 80 ? 'Strong Match' : score >= 70 ? 'Good Match' : 'Partial Match');
+
+                          let cardTheme = 'bg-indigo-50/30 border-indigo-100 hover:bg-indigo-50/80';
+                          let categoryColor = 'bg-indigo-100 text-indigo-700';
+                          const categoryText = effectiveCategory;
+
+                          if (score >= 90 || effectiveCategory === 'Excellent Match') {
                             cardTheme = 'bg-emerald-50/30 border-emerald-100 hover:bg-emerald-50/80';
-                            categoryText = 'Excellent Match';
                             categoryColor = 'bg-emerald-100 text-emerald-700';
-                          } else if (score >= 70 && score < 80) {
+                          } else if ((score >= 70 && score < 80) || effectiveCategory === 'Good Match') {
                             cardTheme = 'bg-amber-50/30 border-amber-100 hover:bg-amber-50/80';
-                            categoryText = 'Good Match';
                             categoryColor = 'bg-amber-100 text-amber-700';
-                          } else if (score < 70) {
+                          } else if (score < 70 || effectiveCategory === 'Partial Match') {
                             cardTheme = 'bg-slate-50/30 border-slate-100 hover:bg-slate-50/80';
-                            categoryText = 'Partial Match';
                             categoryColor = 'bg-slate-100 text-slate-700';
                           }
 
@@ -1045,7 +1046,57 @@ export default function JobDetailPage() {
                                 <div className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100/50 px-2.5 py-1 text-xs font-bold text-indigo-700 border border-indigo-200/50">
                                   <Sparkles className="h-3 w-3" />
                                   <span>{score}% Match</span>
+                                  {(match as any).vectorScore !== undefined && (
+                                    <span
+                                      className="text-xs text-slate-400 ml-1"
+                                      title={`Semantic similarity: ${Math.round(((match as any).vectorScore || 0) * 100)}%`}
+                                    >
+                                      (AI: {Math.round(((match as any).vectorScore || 0) * 100)}%)
+                                    </span>
+                                  )}
                                 </div>
+
+                                {/* Hybrid Score Dimensions (if available) */}
+                                {(match as any).hybridBreakdown && (
+                                  <div className="mt-1 space-y-1.5 border-t border-slate-100 pt-2 w-full min-w-[180px]">
+                                    {[
+                                      { key: 'skills', label: 'Skills', icon: '🎯' },
+                                      { key: 'experienceYears', label: 'Experience', icon: '⏱️' },
+                                      { key: 'seniority', label: 'Seniority', icon: '📈' },
+                                    ].map(({ key, label, icon }) => {
+                                      const dim = (match as any).hybridBreakdown?.dimensions?.[key];
+                                      if (!dim) return null;
+                                      const dimScore = dim.score as number;
+                                      const dimColor = dimScore >= 80 ? '#00B67A' : dimScore >= 60 ? '#f59e0b' : '#ef4444';
+                                      return (
+                                        <div key={key} className="flex items-center gap-2">
+                                          <span className="text-xs w-24 text-slate-500 flex items-center gap-1">
+                                            <span>{icon}</span>{label}
+                                          </span>
+                                          <div className="flex-1 bg-slate-100 rounded-full h-1.5">
+                                            <div
+                                              className="h-1.5 rounded-full transition-all duration-500"
+                                              style={{ width: `${dimScore}%`, backgroundColor: dimColor }}
+                                            />
+                                          </div>
+                                          <span className="text-xs font-semibold w-8 text-right" style={{ color: dimColor }}>
+                                            {dimScore}%
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                    {/* Deal Breaker Alert */}
+                                    {(match as any).hybridBreakdown?.dealBreakers?.length > 0 && (
+                                      <div className="flex items-start gap-1.5 mt-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+                                        <span className="text-red-500 text-xs mt-0.5">⚠️</span>
+                                        <span className="text-xs text-red-700 font-medium">
+                                          {(match as any).hybridBreakdown.dealBreakers[0]}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
                                 <div className="flex items-center gap-3">
                                   <button
                                     type="button"
@@ -1273,6 +1324,9 @@ export default function JobDetailPage() {
                             <div key={key} className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center space-y-1.5">
                               <span className="text-slate-400 capitalize text-[10px] font-medium block">{key}</span>
                               <span className="font-bold text-[#2A2C4E] text-sm">{val}%</span>
+                              {reportData.dimensions?.[key]?.details && (
+                                <div className="text-xs text-slate-400 mt-0.5 leading-tight">{reportData.dimensions[key].details}</div>
+                              )}
                             </div>
                           ))}
                         </div>

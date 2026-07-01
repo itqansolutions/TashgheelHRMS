@@ -4,6 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
 import { GenerateJdDto, GenerateQuestionsDto } from './dto/ai.dto';
 import PDFDocument from 'pdfkit';
+import {
+  computeHybridScore,
+  CandidateMatchProfile,
+  JobMatchProfile,
+} from './matching.engine';
 
 @Injectable()
 export class AiService implements OnModuleInit {
@@ -28,12 +33,16 @@ export class AiService implements OnModuleInit {
   }
 
   private isMockKey(apiKey: string): boolean {
-    return !apiKey || 
-           apiKey === 'mock-key' || 
-           apiKey === 'your_google_gemini_api_key' || 
-           apiKey.startsWith('your_') || 
-           apiKey.includes('placeholder') || 
-           apiKey.includes('api_key');
+    if (!apiKey) return true;
+    const lower = apiKey.toLowerCase().trim();
+    return (
+      lower === 'mock-key' ||
+      lower === 'your_google_gemini_api_key' ||
+      lower.startsWith('your_') ||
+      lower === 'placeholder' ||
+      lower === 'changeme' ||
+      apiKey.length < 10
+    );
   }
 
   /**
@@ -117,8 +126,17 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
       lastName,
       email: emailMatch ? emailMatch[0] : `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`,
       phone: phoneMatch ? phoneMatch[0].trim() : '+1 (555) 019-2834',
+      linkedinUrl: null,
+      currentLocation: null,
+      expectedSalary: null,
+      nationality: null,
+      seniorityLevel: 'Mid',
+      totalYearsExperience: 3,
+      industryBackground: 'Software Development',
+      certifications: [],
+      languages: [{ language: 'English', proficiency: 'Professional' }],
       skills: [...new Set(skillsList)],
-      aiSummary: `Extracted candidate profile for ${firstName} ${lastName}. Demonstrated background with skills in: ${skillsList.slice(0, 5).join(', ')}.`,
+      aiSummary: `Extracted candidate profile for ${firstName} ${lastName}. Demonstrated background with skills in: ${skillsList.slice(0, 5).join(', ')}. Mid-level professional with approximately 3 years of experience.`,
       experience,
       education,
     };
@@ -139,19 +157,24 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
    * Generates a 768-dimensional embedding vector for a given text using Gemini.
    */
   async generateEmbedding(text: string): Promise<number[]> {
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
+    if (this.isMockKey(apiKey)) {
+      this.logger.warn('GEMINI_API_KEY is not configured. Embedding generation skipped.');
+      throw new Error('AI embedding service is not configured. Please set a valid GEMINI_API_KEY.');
+    }
     try {
-      const apiKey = this.configService.get<string>('GEMINI_API_KEY') || 'mock-key';
-      if (this.isMockKey(apiKey)) {
-        return Array.from({ length: 768 }, () => Math.random() - 0.5);
-      }
       const response = await this.ai.models.embedContent({
         model: 'text-embedding-004',
         contents: text,
       });
-      return response.embeddings?.[0]?.values || [];
+      const values = response.embeddings?.[0]?.values || [];
+      if (values.length === 0) {
+        throw new Error('Empty embedding returned from Gemini API');
+      }
+      return values;
     } catch (error) {
-      this.logger.error('Failed to generate embedding, falling back to mock vector', error);
-      return Array.from({ length: 768 }, () => Math.random() - 0.5);
+      this.logger.error('Failed to generate embedding from Gemini API', error);
+      throw error; // Never fall back to random vectors
     }
   }
 
@@ -222,21 +245,59 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
     }
     try {
       const prompt = `
-        You are an expert AI Resume Parser. Extract the following information from the resume text provided below.
-        Return the result STRICTLY as a JSON object with no markdown formatting or backticks.
-        Ensure the JSON has exactly these keys:
+        You are an expert AI Resume Parser for a professional recruitment agency.
+        Extract ALL information from the resume text provided below.
+        Return the result STRICTLY as a JSON object with no markdown formatting, code fences, or backticks.
+
+        The JSON must have EXACTLY these keys:
         - firstName (string)
         - lastName (string)
-        - email (string)
-        - phone (string)
+        - email (string or null)
+        - phone (string or null)
         - linkedinUrl (string or null)
-        - currentLocation (string or null)
-        - expectedSalary (number or null)
+        - currentLocation (string or null - city and country if available, e.g. "Riyadh, Saudi Arabia")
+        - expectedSalary (number or null - monthly salary as a number only, no currency symbols)
         - nationality (string or null)
-        - skills (array of strings)
-        - aiSummary (string: a concise 2-sentence professional summary of the candidate)
-        - experience (array of objects: each object must have "companyName" (string), "title" (string), "startDate" (string in YYYY-MM-DD format), "endDate" (string or null), "isCurrent" (boolean), "description" (string or null))
-        - education (array of objects: each object must have "institution" (string), "degree" (string), "fieldOfStudy" (string or null), "startDate" (string in YYYY-MM-DD format), "endDate" (string or null))
+
+        - seniorityLevel (string - MUST be exactly one of: "Junior" | "Mid" | "Senior" | "Lead" | "Executive"
+          Infer from years of experience and job titles:
+          0-2 years = Junior, 2-5 years = Mid, 5-10 years = Senior, 10+ years in management = Lead/Executive)
+        - totalYearsExperience (number - total professional years as an integer, computed from experience dates)
+        - industryBackground (string or null - comma-separated top 2 industries, e.g. "FinTech, Healthcare")
+
+        - skills (array of strings - all technical and soft skills mentioned)
+        - certifications (array of objects, each with:
+            "name" (string),
+            "issuingOrganization" (string or null),
+            "year" (number or null)
+          Return [] if none found.)
+        - languages (array of objects, each with:
+            "language" (string),
+            "proficiency" (string - MUST be exactly one of: "Native" | "Fluent" | "Professional" | "Conversational" | "Basic")
+          ALWAYS include the language the CV is written in.)
+
+        - aiSummary (string: a 3-sentence professional summary including seniority level,
+          total years of experience, primary industry, and top 3 skills)
+
+        - experience (array of objects, each MUST have:
+            "companyName" (string),
+            "title" (string),
+            "startDate" (string YYYY-MM-DD - use YYYY-01-01 if only year known),
+            "endDate" (string YYYY-MM-DD or null if current),
+            "isCurrent" (boolean),
+            "description" (string or null))
+
+        - education (array of objects, each MUST have:
+            "institution" (string),
+            "degree" (string),
+            "fieldOfStudy" (string or null),
+            "startDate" (string YYYY-MM-DD or null),
+            "endDate" (string YYYY-MM-DD or null))
+
+        RULES:
+        - For dates: use YYYY-01-01 if only year known. NEVER use today's date as a default.
+        - For totalYearsExperience: compute from earliest experience startDate to today.
+        - For certifications and languages: return [] if none are found, never null.
 
         Resume Text:
         ${text}
@@ -257,35 +318,203 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
   }
 
   /**
+   * Builds rich, standardized embedding text for a candidate.
+   * Single source of truth — used by create, update, reparse, and resync.
+   */
+  buildCandidateEmbeddingText(candidate: {
+    firstName: string;
+    lastName: string;
+    aiSummary?: string | null;
+    seniorityLevel?: string | null;
+    totalYearsExperience?: number | null;
+    industryBackground?: string | null;
+    expectedSalary?: number | null;
+    currentLocation?: string | null;
+    skills?: Array<{ skillName: string; proficiency?: string }> | null;
+    experience?: Array<{ title: string; companyName: string; description?: string | null }> | null;
+    education?: Array<{ degree: string; fieldOfStudy?: string | null; institution: string }> | null;
+    certifications?: unknown;
+    languages?: unknown;
+  }): string {
+    const parts: string[] = [];
+
+    const seniorityStr = candidate.seniorityLevel || '';
+    const yearsStr = candidate.totalYearsExperience
+      ? `with ${candidate.totalYearsExperience} years of experience`
+      : '';
+    const industryStr = candidate.industryBackground
+      ? `in ${candidate.industryBackground}`
+      : '';
+    if (seniorityStr || yearsStr) {
+      parts.push(
+        `${seniorityStr} professional ${yearsStr} ${industryStr}`.trim() + '.',
+      );
+    }
+    parts.push(`Candidate: ${candidate.firstName} ${candidate.lastName}.`);
+
+    if (candidate.aiSummary) {
+      parts.push(`Summary: ${candidate.aiSummary}`);
+    }
+
+    if (candidate.skills && candidate.skills.length > 0) {
+      const skillsStr = candidate.skills
+        .map((s) =>
+          s.proficiency && s.proficiency !== 'INTERMEDIATE'
+            ? `${s.skillName} (${s.proficiency})`
+            : s.skillName,
+        )
+        .join(', ');
+      parts.push(`Skills: ${skillsStr}`);
+    }
+
+    const certs = candidate.certifications as Array<{ name: string }> | null;
+    if (certs && certs.length > 0) {
+      parts.push(`Certifications: ${certs.map((c) => c.name).join(', ')}`);
+    }
+
+    const langs = candidate.languages as Array<{ language: string; proficiency: string }> | null;
+    if (langs && langs.length > 0) {
+      parts.push(
+        `Languages: ${langs.map((l) => `${l.language} (${l.proficiency})`).join(', ')}`,
+      );
+    }
+
+    if (candidate.experience && candidate.experience.length > 0) {
+      const expStr = candidate.experience
+        .slice(0, 5)
+        .map(
+          (e) =>
+            `${e.title} at ${e.companyName}${
+              e.description ? ': ' + e.description.substring(0, 120) : ''
+            }`,
+        )
+        .join('. ');
+      parts.push(`Experience: ${expStr}`);
+    }
+
+    if (candidate.education && candidate.education.length > 0) {
+      const eduStr = candidate.education
+        .map(
+          (e) =>
+            `${e.degree}${e.fieldOfStudy ? ' in ' + e.fieldOfStudy : ''} from ${e.institution}`,
+        )
+        .join('. ');
+      parts.push(`Education: ${eduStr}`);
+    }
+
+    if (candidate.currentLocation) {
+      parts.push(`Location: ${candidate.currentLocation}`);
+    }
+    if (candidate.expectedSalary) {
+      parts.push(`Expected Salary: ${candidate.expectedSalary} SAR/month`);
+    }
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Builds rich, standardized embedding text for a job opening.
+   */
+  buildJobEmbeddingText(job: {
+    title: string;
+    department?: string | null;
+    location?: string | null;
+    type?: string | null;
+    salaryMin?: number | null;
+    salaryMax?: number | null;
+    seniorityLevel?: string | null;
+    minExperienceYears?: number | null;
+    descriptionEn?: string | null;
+    requirementsEn?: string | null;
+    requiredSkills?: unknown;
+    requiredLanguages?: unknown;
+  }): string {
+    const parts: string[] = [];
+
+    const seniorityPrefix = job.seniorityLevel ? `${job.seniorityLevel} level ` : '';
+    parts.push(`Hiring: ${seniorityPrefix}${job.title}`);
+
+    if (job.department) parts.push(`Department: ${job.department}`);
+    if (job.location) parts.push(`Location: ${job.location}`);
+    if (job.type) parts.push(`Job Type: ${job.type}`);
+    if (job.minExperienceYears) {
+      parts.push(`Minimum Experience: ${job.minExperienceYears} years`);
+    }
+    if (job.salaryMin || job.salaryMax) {
+      const range = [job.salaryMin, job.salaryMax].filter(Boolean).join(' - ');
+      parts.push(`Salary Range: ${range} SAR/month`);
+    }
+
+    const reqSkills = job.requiredSkills as Array<{ skill: string; required: boolean; minLevel?: string }> | null;
+    if (reqSkills && reqSkills.length > 0) {
+      const required = reqSkills
+        .filter((s) => s.required)
+        .map((s) => `${s.skill}${s.minLevel ? ' (' + s.minLevel + ')' : ''}`)
+        .join(', ');
+      const nice = reqSkills
+        .filter((s) => !s.required)
+        .map((s) => s.skill)
+        .join(', ');
+      if (required) parts.push(`Required Skills: ${required}`);
+      if (nice) parts.push(`Nice-to-have: ${nice}`);
+    } else if (job.requirementsEn) {
+      parts.push(`Requirements: ${job.requirementsEn.substring(0, 600)}`);
+    }
+
+    const reqLangs = job.requiredLanguages as Array<{ language: string; level: string }> | null;
+    if (reqLangs && reqLangs.length > 0) {
+      parts.push(
+        `Required Languages: ${reqLangs.map((l) => `${l.language} (${l.level})`).join(', ')}`,
+      );
+    }
+
+    if (job.descriptionEn) {
+      parts.push(`Description: ${job.descriptionEn.substring(0, 500)}`);
+    }
+
+    return parts.join('\n');
+  }
+
+  /**
    * Sync Candidate Embedding to DB using raw SQL (pgvector).
+   * Skips silently if embedding fails — never stores random vectors.
    */
   async syncCandidateEmbedding(candidateId: string, textToEmbed: string) {
-    const vector = await this.generateEmbedding(textToEmbed);
-    if (vector.length === 0) return;
-
-    const vectorString = `[${vector.join(',')}]`;
-
-    await this.db.$executeRawUnsafe(
-      `UPDATE "candidates" SET embedding = $1::vector WHERE id = $2`,
-      vectorString,
-      candidateId
-    );
+    try {
+      const vector = await this.generateEmbedding(textToEmbed);
+      const vectorString = `[${vector.join(',')}]`;
+      await this.db.$executeRawUnsafe(
+        `UPDATE "candidates" SET embedding = $1::vector WHERE id = $2`,
+        vectorString,
+        candidateId,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Could not sync embedding for candidate ${candidateId}: ${err?.message ?? err}`,
+      );
+      // Do NOT store random vectors — just skip
+    }
   }
 
   /**
    * Sync Job Opening Embedding to DB using raw SQL (pgvector).
+   * Skips silently if embedding fails — never stores random vectors.
    */
   async syncJobOpeningEmbedding(jobId: string, textToEmbed: string) {
-    const vector = await this.generateEmbedding(textToEmbed);
-    if (vector.length === 0) return;
-
-    const vectorString = `[${vector.join(',')}]`;
-
-    await this.db.$executeRawUnsafe(
-      `UPDATE "job_openings" SET embedding = $1::vector WHERE id = $2`,
-      vectorString,
-      jobId
-    );
+    try {
+      const vector = await this.generateEmbedding(textToEmbed);
+      const vectorString = `[${vector.join(',')}]`;
+      await this.db.$executeRawUnsafe(
+        `UPDATE "job_openings" SET embedding = $1::vector WHERE id = $2`,
+        vectorString,
+        jobId,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Could not sync embedding for job ${jobId}: ${err?.message ?? err}`,
+      );
+      // Do NOT store random vectors — just skip
+    }
   }
 
   /**
@@ -294,14 +523,15 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
    */
   async findMatchingCandidatesForJob(jobId: string, limit = 10, poolId?: string) {
     try {
+      // Step 1: Vector pre-filter — top 50 by cosine similarity (fast)
       let query = `
-        SELECT c.id, 1 - (c.embedding <=> j.embedding) AS match_score
+        SELECT c.id, 1 - (c.embedding <=> j.embedding) AS vector_score
         FROM "candidates" c, "job_openings" j
         WHERE j.id = $1::uuid
           AND c.embedding IS NOT NULL
           AND j.embedding IS NOT NULL
       `;
-      const params: any[] = [jobId, limit];
+      const params: any[] = [jobId, 50];
 
       if (poolId) {
         query += ` AND c.id IN (SELECT "candidateId" FROM "candidate_pool_members" WHERE "poolId" = $3::uuid) `;
@@ -317,27 +547,88 @@ ${dto.keywords ? `- Focus on requirements related to: ${dto.keywords}` : ''}
 
       if (rawMatches.length === 0) return [];
 
-      const candidateIds = rawMatches.map(m => m.id);
+      const candidateIds = rawMatches.map((m) => m.id);
 
+      // Step 2: Fetch full candidate profiles for hybrid scoring
       const candidates = await this.db.candidate.findMany({
         where: { id: { in: candidateIds } },
         include: {
           skills: true,
-          experience: {
-            orderBy: { startDate: 'desc' }
-          }
-        }
+          experience: { orderBy: { startDate: 'desc' } },
+          education: true,
+        },
       });
 
-      return rawMatches.map(m => {
-        const cand = candidates.find(c => c.id === m.id);
+      // Step 3: Fetch job profile for scoring
+      const jobOpening = await this.db.jobOpening.findUnique({
+        where: { id: jobId },
+        include: { requisition: true },
+      });
+
+      if (!jobOpening) return [];
+
+      const jobProfile: JobMatchProfile = {
+        id: jobOpening.id,
+        title: jobOpening.title,
+        department: jobOpening.requisition.department,
+        location: jobOpening.requisition.location,
+        type: jobOpening.requisition.type,
+        salaryMin: jobOpening.requisition.salaryMin
+          ? Number(jobOpening.requisition.salaryMin)
+          : null,
+        salaryMax: jobOpening.requisition.salaryMax
+          ? Number(jobOpening.requisition.salaryMax)
+          : null,
+        seniorityLevel: (jobOpening.requisition as any).seniorityLevel ?? null,
+        minExperienceYears: (jobOpening.requisition as any).minExperienceYears ?? null,
+        descriptionEn: jobOpening.requisition.descriptionEn,
+        requirementsEn: jobOpening.requisition.requirementsEn,
+        requiredSkills: (jobOpening.requisition as any).requiredSkills as any ?? null,
+        requiredLanguages: (jobOpening.requisition as any).requiredLanguages as any ?? null,
+      };
+
+      // Step 4: Apply hybrid scoring to all pre-filtered candidates
+      const vectorScoreMap = new Map(
+        rawMatches.map((m) => [m.id, Number(m.vector_score)]),
+      );
+
+      const scored = candidates.map((cand) => {
+        const profile: CandidateMatchProfile = {
+          id: cand.id,
+          firstName: cand.firstName,
+          lastName: cand.lastName,
+          email: cand.email,
+          aiSummary: cand.aiSummary,
+          seniorityLevel: (cand as any).seniorityLevel ?? null,
+          totalYearsExperience: (cand as any).totalYearsExperience ?? null,
+          industryBackground: (cand as any).industryBackground ?? null,
+          expectedSalary: cand.expectedSalary ? Number(cand.expectedSalary) : null,
+          currentLocation: cand.currentLocation,
+          skills: cand.skills.map((s) => ({ skillName: s.skillName, proficiency: s.proficiency })),
+          experience: cand.experience,
+          education: cand.education,
+          certifications: (cand as any).certifications as any ?? null,
+          languages: (cand as any).languages as any ?? null,
+          vectorScore: vectorScoreMap.get(cand.id) ?? 0,
+        };
+
+        const hybrid = computeHybridScore(profile, jobProfile);
+
         return {
           ...cand,
-          match_score: m.match_score
+          match_score: hybrid.overallScore / 100, // backward compat (0–1)
+          hybridScore: hybrid.overallScore,        // 0–100
+          hybridBreakdown: hybrid,
+          vectorScore: profile.vectorScore,
         };
-      }).filter(c => c.id !== undefined);
+      });
+
+      // Step 5: Sort by hybrid score descending, return top N
+      return scored
+        .sort((a, b) => b.hybridScore - a.hybridScore)
+        .slice(0, limit);
     } catch (error) {
-      console.error('ERROR in findMatchingCandidatesForJob:', error);
+      this.logger.error('ERROR in findMatchingCandidatesForJob:', error);
       throw error;
     }
   }

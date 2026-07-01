@@ -98,10 +98,24 @@ export class CandidatesService {
       return candidate;
     }).then(async (candidate) => {
       try {
-        const skillsText = dto.skills ? dto.skills.map((s) => s.skillName).join(', ') : '';
-        const experienceText = dto.experience ? dto.experience.map((e) => `${e.title} at ${e.companyName}`).join(', ') : '';
-        const textToEmbed = `${candidate.firstName} ${candidate.lastName}. Skills: ${skillsText}. Experience: ${experienceText}.`;
-        await this.aiService.syncCandidateEmbedding(candidate.id, textToEmbed);
+        // Use rich unified embedding text builder
+        const full = await this.db.candidate.findUnique({
+          where: { id: candidate.id },
+          include: { skills: true, experience: true, education: true },
+        });
+        if (full) {
+          const textToEmbed = this.aiService.buildCandidateEmbeddingText({
+            ...full,
+            expectedSalary: full.expectedSalary ? Number(full.expectedSalary) : null,
+            certifications: (full as any).certifications,
+            languages: (full as any).languages,
+            seniorityLevel: (full as any).seniorityLevel,
+            totalYearsExperience: (full as any).totalYearsExperience,
+            industryBackground: (full as any).industryBackground,
+            skills: full.skills.map((s) => ({ skillName: s.skillName, proficiency: s.proficiency })),
+          });
+          await this.aiService.syncCandidateEmbedding(candidate.id, textToEmbed);
+        }
       } catch (err) {
         this.logger.error(`Failed to sync embedding for candidate ${candidate.id}`, err);
       }
@@ -300,10 +314,24 @@ export class CandidatesService {
       return updated;
     }).then(async (updated) => {
       try {
-        const skillsText = updated.skills ? updated.skills.map((s) => s.skillName).join(', ') : '';
-        const experienceText = updated.experience ? updated.experience.map((e) => `${e.title} at ${e.companyName}`).join(', ') : '';
-        const textToEmbed = `${updated.firstName} ${updated.lastName}. Skills: ${skillsText}. Experience: ${experienceText}.`;
-        await this.aiService.syncCandidateEmbedding(updated.id, textToEmbed);
+        // Use rich unified embedding text builder
+        const full = await this.db.candidate.findUnique({
+          where: { id: updated.id },
+          include: { skills: true, experience: true, education: true },
+        });
+        if (full) {
+          const textToEmbed = this.aiService.buildCandidateEmbeddingText({
+            ...full,
+            expectedSalary: full.expectedSalary ? Number(full.expectedSalary) : null,
+            certifications: (full as any).certifications,
+            languages: (full as any).languages,
+            seniorityLevel: (full as any).seniorityLevel,
+            totalYearsExperience: (full as any).totalYearsExperience,
+            industryBackground: (full as any).industryBackground,
+            skills: full.skills.map((s) => ({ skillName: s.skillName, proficiency: s.proficiency })),
+          });
+          await this.aiService.syncCandidateEmbedding(updated.id, textToEmbed);
+        }
       } catch (err) {
         this.logger.error(`Failed to sync embedding for updated candidate ${updated.id}`, err);
       }
@@ -596,6 +624,13 @@ export class CandidatesService {
     const expectedSalary = parsedData?.expectedSalary ? Number(parsedData.expectedSalary) : undefined;
     const nationality = cleanString(parsedData?.nationality);
 
+    // New AI matching fields extracted from enhanced parser
+    const seniorityLevel = cleanString(parsedData?.seniorityLevel) || null;
+    const totalYearsExperience = parsedData?.totalYearsExperience ? Number(parsedData.totalYearsExperience) : null;
+    const industryBackground = cleanString(parsedData?.industryBackground) || null;
+    const certifications = Array.isArray(parsedData?.certifications) ? parsedData.certifications : [];
+    const languages = Array.isArray(parsedData?.languages) ? parsedData.languages : [];
+
     // Check for duplicates in the DB (only active candidates, where deletedAt is null)
     let existingCandidate = null;
     if (email) {
@@ -634,6 +669,12 @@ export class CandidatesService {
             expectedSalary: expectedSalary,
             nationality: nationality,
             availability: 'AVAILABLE',
+            // New AI matching fields from enhanced parser
+            ...(seniorityLevel ? { seniorityLevel } : {}),
+            ...(totalYearsExperience ? { totalYearsExperience } : {}),
+            ...(industryBackground ? { industryBackground } : {}),
+            ...(certifications.length > 0 ? { certifications } : {}),
+            ...(languages.length > 0 ? { languages } : {}),
             skills: Array.isArray(parsedData?.skills) && parsedData.skills.length > 0
               ? {
                   createMany: {
@@ -746,32 +787,25 @@ export class CandidatesService {
       this.logger.error(`Failed to upload CV document for candidate ${candidate.id}`, uploadError);
     }
 
-    // Sync candidate embedding based on full detailed history to support highly accurate vector matching
+    // Sync embedding using unified rich builder
     try {
-      const skillsArray = Array.isArray(candidate.skills) ? candidate.skills.map((s: any) => s.skillName) : [];
-      const expArray = Array.isArray(candidate.experience) ? candidate.experience.map((e: any) => {
-        const dateStr = e.isCurrent ? 'Present' : e.endDate ? new Date(e.endDate).getFullYear() : '';
-        return `${e.title} at ${e.companyName} (${dateStr}): ${e.description || ''}`;
-      }) : [];
-      const eduArray = Array.isArray(candidate.education) ? candidate.education.map((e: any) => 
-        `${e.degree} in ${e.fieldOfStudy || ''} from ${e.institution}`
-      ) : [];
-
-      const textParts = [
-        `Candidate: ${candidate.firstName} ${candidate.lastName}`,
-        `Summary: ${candidate.aiSummary || ''}`,
-        `Skills: ${skillsArray.join(', ')}`
-      ];
-
-      if (expArray.length > 0) {
-        textParts.push(`Experience: ${expArray.join('. ')}`);
+      const full = await this.db.candidate.findUnique({
+        where: { id: candidate.id },
+        include: { skills: true, experience: true, education: true },
+      });
+      if (full) {
+        const textToEmbed = this.aiService.buildCandidateEmbeddingText({
+          ...full,
+          expectedSalary: full.expectedSalary ? Number(full.expectedSalary) : null,
+          certifications: (full as any).certifications,
+          languages: (full as any).languages,
+          seniorityLevel: (full as any).seniorityLevel,
+          totalYearsExperience: (full as any).totalYearsExperience,
+          industryBackground: (full as any).industryBackground,
+          skills: full.skills.map((s) => ({ skillName: s.skillName, proficiency: s.proficiency })),
+        });
+        await this.aiService.syncCandidateEmbedding(candidate.id, textToEmbed);
       }
-      if (eduArray.length > 0) {
-        textParts.push(`Education: ${eduArray.join('. ')}`);
-      }
-
-      const textToEmbed = textParts.join('\n');
-      await this.aiService.syncCandidateEmbedding(candidate.id, textToEmbed);
     } catch (embedError) {
       this.logger.error(`Failed to sync candidate embedding for candidate ${candidate.id}`, embedError);
     }
@@ -994,28 +1028,26 @@ export class CandidatesService {
     }
 
     try {
-      const skillsArray = Array.isArray(candidate.skills) ? candidate.skills.map((s: any) => s.skillName) : [];
-      const expArray = Array.isArray(candidate.experience) ? candidate.experience.map((e: any) => {
-        const dateStr = e.isCurrent ? 'Present' : e.endDate ? new Date(e.endDate).getFullYear() : '';
-        return `${e.title} at ${e.companyName} (${dateStr}): ${e.description || ''}`;
-      }) : [];
-      const eduArray = Array.isArray(candidate.education) ? candidate.education.map((e: any) => 
-        `${e.degree} in ${e.fieldOfStudy || ''} from ${e.institution}`
-      ) : [];
+      const full = await this.db.candidate.findUnique({
+        where: { id },
+        include: { skills: true, experience: true, education: true },
+      });
+      if (!full) throw new NotFoundException('Candidate not found after fetch');
 
-      const textParts = [
-        `Candidate: ${candidate.firstName} ${candidate.lastName}`,
-        `Summary: ${candidate.aiSummary || ''}`,
-        `Skills: ${skillsArray.join(', ')}`
-      ];
-
-      if (expArray.length > 0) textParts.push(`Experience: ${expArray.join('. ')}`);
-      if (eduArray.length > 0) textParts.push(`Education: ${eduArray.join('. ')}`);
-
-      await this.aiService.syncCandidateEmbedding(candidate.id, textParts.join('\n'));
+          const textToEmbed = this.aiService.buildCandidateEmbeddingText({
+            ...full,
+            expectedSalary: full.expectedSalary ? Number(full.expectedSalary) : null,
+            certifications: (full as any).certifications,
+            languages: (full as any).languages,
+            seniorityLevel: (full as any).seniorityLevel,
+            totalYearsExperience: (full as any).totalYearsExperience,
+            industryBackground: (full as any).industryBackground,
+            skills: full.skills.map((s) => ({ skillName: s.skillName, proficiency: s.proficiency })),
+          });
+      await this.aiService.syncCandidateEmbedding(id, textToEmbed);
       return { success: true };
     } catch (err) {
-      this.logger.error(`Failed to manually sync embedding for candidate ${candidate.id}`, err);
+      this.logger.error(`Failed to manually sync embedding for candidate ${id}`, err);
       throw new BadRequestException('Failed to generate AI embedding');
     }
   }

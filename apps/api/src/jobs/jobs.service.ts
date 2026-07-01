@@ -193,7 +193,20 @@ export class JobsService {
       return { requisition: updatedRequisition, jobOpening };
     }).then(async (result) => {
       try {
-        const textToEmbed = `${result.jobOpening.title} position in the ${requisition.department} department. Location: ${requisition.location}. Job Type: ${requisition.type}. Description: ${requisition.descriptionEn}. Requirements: ${requisition.requirementsEn}.`;
+        const textToEmbed = this.aiService.buildJobEmbeddingText({
+          title: result.jobOpening.title,
+          department: requisition.department,
+          location: requisition.location,
+          type: requisition.type,
+          salaryMin: requisition.salaryMin ? Number(requisition.salaryMin) : null,
+          salaryMax: requisition.salaryMax ? Number(requisition.salaryMax) : null,
+          seniorityLevel: (requisition as any).seniorityLevel ?? null,
+          minExperienceYears: (requisition as any).minExperienceYears ?? null,
+          descriptionEn: requisition.descriptionEn,
+          requirementsEn: requisition.requirementsEn,
+          requiredSkills: (requisition as any).requiredSkills ?? null,
+          requiredLanguages: (requisition as any).requiredLanguages ?? null,
+        });
         await this.aiService.syncJobOpeningEmbedding(result.jobOpening.id, textToEmbed);
       } catch (err) {
         this.logger.error(`Failed to sync embedding for job opening ${result.jobOpening.id}`, err);
